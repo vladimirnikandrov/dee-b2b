@@ -381,7 +381,7 @@ export default function DeeAprilB2B() {
       company: buyer.company, contact: buyer.contact, address: buyer.address,
       city: buyer.city, country: buyer.country, zip: buyer.zip, vat: buyer.vat, email: buyer.email,
       updated_at: new Date().toISOString(),
-    });
+    }, { onConflict: "user_id" });
   };
 
   /* Auth */
@@ -421,6 +421,16 @@ export default function DeeAprilB2B() {
     setSession(null); setIsAdmin(false); setQuantities({}); setView("landing");
     setBuyer({company:"",address:"",city:"",country:"",zip:"",vat:"",email:"",contact:""});
     setOrderNumber(generateOrderNumber());
+  };
+
+  const handleResetPassword = async () => {
+    setAuthError("");
+    if (!authForm.email) { setAuthError("Enter your email address"); return; }
+    const { error } = await supabase.auth.resetPasswordForEmail(authForm.email, {
+      redirectTo: window.location.origin,
+    });
+    if (error) { setAuthError(error.message); return; }
+    setView("reset_sent");
   };
 
   const handleAdminLogin = () => {
@@ -620,7 +630,29 @@ table{border-collapse:collapse;width:100%;}
     <AuthScreen title="Sign In" submitLabel="Sign In" altText="No account yet?" altAction={()=>{setAuthError("");setView("register");}} altLabel="Create one" onSubmit={handleLogin} authError={authError} adminError="" onBack={goBack} fields={<>
       <div><label style={labelStyle}>Email</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})} placeholder="orders@company.com"/></div>
       <div><label style={labelStyle}>Password</label><input className="da-input" style={inputStyle} type="password" value={authForm.password} onChange={e=>setAuthForm({...authForm,password:e.target.value})} placeholder="Your password" onKeyDown={e=>e.key==="Enter"&&handleLogin()}/></div>
+      <div style={{textAlign:"right",marginTop:-8}}><button onClick={()=>{setAuthError("");setView("forgot_password");}} style={{background:"none",border:"none",fontSize:11,color:"#999",cursor:"pointer",fontFamily:FONT}}>Forgot password?</button></div>
     </>} />
+  );
+
+  if (view === "forgot_password") return (
+    <AuthScreen title="Reset Password" submitLabel="Send Reset Link" onSubmit={handleResetPassword} authError={authError} adminError="" onBack={()=>{setAuthError("");setView("login");}} altText="Remember your password?" altAction={()=>{setAuthError("");setView("login");}} altLabel="Sign in" fields={
+      <div><label style={labelStyle}>Email</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})} placeholder="orders@company.com" onKeyDown={e=>e.key==="Enter"&&handleResetPassword()}/></div>
+    } />
+  );
+
+  if (view === "reset_sent") return (
+    <div style={{...base,background:"#fff",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh"}}>
+      <div style={{width:"100%",maxWidth:380,padding:"0 24px",boxSizing:"border-box",textAlign:"center"}}>
+        <div style={{animation:"scaleIn 0.6s cubic-bezier(0.23,1,0.32,1) both"}}>
+          <div style={{display:"flex",justifyContent:"center"}}><Logo style={{ height: 22 }} /></div>
+          <div style={{fontSize:9,letterSpacing:"0.3em",textTransform:"uppercase",color:"#999",marginTop:20}}>Check Your Email</div>
+        </div>
+        <FadeIn delay={0.15}>
+          <div style={{fontSize:13,color:"#666",lineHeight:1.8,marginTop:28,marginBottom:32}}>We sent a password reset link to <span style={{fontWeight:600,color:"#000"}}>{authForm.email}</span>. Check your inbox and follow the link to set a new password.</div>
+          <button className="da-btn" onClick={()=>{setAuthError("");setAuthForm({company:"",email:"",password:""});setView("login");}} style={{width:"100%",background:"#000",color:"#fff",border:"none",padding:"16px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>Back to Sign In</button>
+        </FadeIn>
+      </div>
+    </div>
   );
 
   if (view === "admin_login") return (
@@ -788,13 +820,13 @@ table{border-collapse:collapse;width:100%;}
                 const qty = getQty(v.sku);
                 return (
                   <div key={vi} style={{display:"flex",flexDirection:"column"}}>
-                    <div style={{background:"#f0f0f0",borderRadius:8,height:220,display:"flex",alignItems:"center",justifyContent:"center",padding:24,marginBottom:16}}>
-                      {PRODUCT_IMAGES[v.size] ? <img src={PRODUCT_IMAGES[v.size]} alt={v.size} style={{maxHeight:"100%",maxWidth:"100%",objectFit:"contain"}} /> : <BottleSVG size={v.size} uniqueId={`${pi}_${vi}`} />}
+                    <div style={{background:"#f0f0f0",aspectRatio:"1/1",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:20,overflow:"hidden"}}>
+                      {PRODUCT_IMAGES[v.size] ? <img src={PRODUCT_IMAGES[v.size]} alt={v.size} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <BottleSVG size={v.size} uniqueId={`${pi}_${vi}`} />}
                     </div>
                     <div style={{fontSize:12,lineHeight:1.9,color:"#333",flex:1}}>
                       <div><span style={{fontWeight:700}}>SIZE</span> {v.size}</div>
                       <div><span style={{fontWeight:700}}>SKU</span> {v.sku}</div>
-                      {v.ean && <div><span style={{fontWeight:700}}>EAN</span> {v.ean}</div>}
+                      {v.ean ? <div><span style={{fontWeight:700}}>EAN</span> {v.ean}</div> : null}
                       {v.rrp ? <div><span style={{fontWeight:700}}>RRP</span> EUR {v.rrp}</div> : <div style={{fontWeight:700,fontSize:11,color:"#999",fontStyle:"italic"}}>NOT FOR RETAIL SALE</div>}
                       <div><span style={{fontWeight:700}}>WSP</span> EUR {v.wsp}</div>
                     </div>
