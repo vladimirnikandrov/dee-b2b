@@ -353,8 +353,10 @@ export default function DeeAprilB2B() {
   const vatAmount = Math.round(totalWSP * vatInfo.rate * 100) / 100;
   const totalItems = orderLines.reduce((s,l) => s+l.qty, 0);
   const shippingAmount = totalItems > 0 ? SHIPPING_FLAT : 0;
-  const totalWithVat = totalWSP + vatAmount + shippingAmount;
-  const depositAmount = Math.round(totalWithVat * 0.3 * 100) / 100;
+  const totalBeforeShipping = totalWSP + vatAmount;
+  const totalWithVat = totalBeforeShipping + shippingAmount;
+  const depositAmount = Math.round(totalBeforeShipping * 0.3 * 100) / 100;
+  const depositInvoiceTotal = depositAmount + shippingAmount;
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
@@ -500,7 +502,7 @@ export default function DeeAprilB2B() {
     if (!found) { setPromoError("Invalid code"); return; }
     setAppliedPromo(found);
     setPromoCode(code);
-    showToast(`Code applied: ${found.label}`);
+    showToast(`✓ ${found.label} pricing applied`);
     setPromoCodeInput("");
   };
 
@@ -514,8 +516,8 @@ export default function DeeAprilB2B() {
       buyer_vat: buyer.vat, buyer_email: buyer.email,
       lines: orderLines,
       total_wsp: totalWSP, vat_rate: vatInfo.rate, vat_label: vatInfo.label, vat_note: vatInfo.note,
-      vat_amount: vatAmount, shipping: shippingAmount, total_with_vat: totalWithVat,
-      deposit_amount: depositAmount, balance_amount: Math.round((totalWithVat - depositAmount) * 100) / 100,
+      vat_amount: vatAmount, shipping_amount: shippingAmount, total_with_vat: totalWithVat,
+      deposit_amount: depositAmount, balance_amount: Math.round((totalBeforeShipping - depositAmount) * 100) / 100,
       promo_code: appliedPromo?.code || null,
       promo_label: appliedPromo?.label || null,
     });
@@ -543,7 +545,28 @@ export default function DeeAprilB2B() {
     setAllOrders(prev => prev.map(o => o.id === orderId ? {...o, statuses:{...o.statuses,[key]:!o.statuses[key]}} : o));
   };
 
-  const cancelOrder = (orderId) => {
+  const restoreOrder = async (orderId) => {
+    await supabase.from("orders").update({ cancelled: false }).eq("id", orderId);
+    setAllOrders(prev => prev.map(o => o.id === orderId ? {...o, cancelled:false} : o));
+    showToast("Order " + orderId + " restored");
+  };
+
+  const deleteOrder = (orderId) => {
+    askConfirm({
+      title: "Delete Order Permanently",
+      message: `This will permanently delete order ${orderId}. This cannot be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+      onConfirm: async () => {
+        await supabase.from("orders").delete().eq("id", orderId);
+        setAllOrders(prev => prev.filter(o => o.id !== orderId));
+        closeConfirm();
+        showToast("Order " + orderId + " deleted");
+      }
+    });
+  };
+
+    const cancelOrder = (orderId) => {
     askConfirm({
       title: "Cancel Order",
       message: `Are you sure you want to cancel order ${orderId}? This action cannot be undone.`,
@@ -750,11 +773,11 @@ table{border-collapse:collapse;width:100%;}
               <span style={{fontSize:17,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase"}}>{product.name}</span>
               <span style={{fontSize:10,letterSpacing:"0.15em",textTransform:"uppercase",color:"#bbb"}}>{product.collection}</span>
             </div>
-            <div className="da-grid-4" style={{display:"grid",gridTemplateColumns:isSingleVariant?"auto":"repeat(4, 1fr)",gap:24,justifyContent:isSingleVariant?"center":"stretch"}}>
+            <div className="da-grid-4" style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:24}}>
               {product.variants.map((v,vi) => {
                 const qty = getQty(v.sku);
                 return (
-                  <div key={vi} style={{display:"flex",flexDirection:"column",maxWidth:isSingleVariant?"280px":"100%"}}>
+                  <div key={vi} style={{display:"flex",flexDirection:"column"}}>
                     <div style={{background:"#f0f0f0",aspectRatio:"1/1",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:20,overflow:"hidden"}}>
                       {PRODUCT_IMAGES[v.size] ? <img src={PRODUCT_IMAGES[v.size]} alt={v.size} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <BottleSVG size={v.size} uniqueId={`${pi}_${vi}`} />}
                     </div>
@@ -800,7 +823,7 @@ table{border-collapse:collapse;width:100%;}
               <input className="da-input" style={{...inputStyle,flex:1}} placeholder="MOODSCENTBAR" value={promoCodeInput} onChange={e=>setPromoCodeInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&applyPromoCode()} />
               <button onClick={applyPromoCode} style={{background:"#000",color:"#fff",border:"none",padding:"12px 20px",borderRadius:10,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,whiteSpace:"nowrap"}}>Apply</button>
             </div>
-            {appliedPromo && <div style={{padding:"12px 16px",background:"#f0f8f0",border:"1px solid #d0e0d0",borderRadius:10,fontSize:11,color:"#2d6a2d",marginBottom:24,fontWeight:500}}>✓ Code applied: {appliedPromo.label}</div>}
+            {appliedPromo && <div style={{padding:"12px 16px",background:"#f0f8f0",border:"1px solid #d0e0d0",borderRadius:10,fontSize:11,color:"#2d6a2d",marginBottom:24,fontWeight:500}}>✓ {appliedPromo.label} pricing applied</div>}
             {promoError && <div style={{padding:"12px 16px",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,fontSize:11,color:"#dc2626",marginBottom:24}}>{promoError}</div>}
             <div style={{fontSize:15,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Buyer Details</div>
             <div style={{fontSize:12,color:"#aaa",marginBottom:32}}>Company details for deposit invoice generation</div>
@@ -829,7 +852,7 @@ table{border-collapse:collapse;width:100%;}
               <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:600,paddingTop:8,borderTop:"1px solid #eee"}}><span>Total</span><span>{formatEUR(totalWithVat)}</span></div>
             </div>
             <div style={{marginTop:16,padding:"20px 0 0",borderTop:"2px solid #000"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><div><div style={{fontSize:10,textTransform:"uppercase",letterSpacing:"0.1em",color:"#999"}}>Deposit Invoice</div><div style={{fontSize:10,color:"#bbb",marginTop:2}}>30% advance</div></div><span style={{fontSize:22,fontWeight:600}}>{formatEUR(depositAmount)}</span></div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><div><div style={{fontSize:10,textTransform:"uppercase",letterSpacing:"0.1em",color:"#999"}}>Deposit Invoice</div><div style={{fontSize:10,color:"#bbb",marginTop:2}}>30% advance + shipping</div></div><span style={{fontSize:22,fontWeight:600}}>{formatEUR(depositInvoiceTotal)}</span></div>
             </div>
             <div style={{display:"flex",gap:10,marginTop:28,flexWrap:"wrap"}}>
               <button className="da-btn da-btn-outline" onClick={()=>setView("catalog")} style={{flex:"0 0 auto",background:"transparent",border:"1px solid #ddd",padding:"15px 20px",borderRadius:12,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color:"#333",transition:"all 0.25s"}}>Back</button>
@@ -911,9 +934,18 @@ table{border-collapse:collapse;width:100%;}
                   <input className="da-input" style={{...inputStyle,fontSize:11}} placeholder="Code (e.g. MOODSCENTBAR)" value={adminPromoForm.code} onChange={e=>setAdminPromoForm({...adminPromoForm,code:e.target.value})} />
                   <input className="da-input" style={{...inputStyle,fontSize:11}} placeholder="Label (e.g. B2VIP)" value={adminPromoForm.label} onChange={e=>setAdminPromoForm({...adminPromoForm,label:e.target.value})} />
                   <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
-                    {["100 ML","50 ML","20 ML","2 ML","KIT"].map(size => (
-                      <div key={size}><label style={{...labelStyle,fontSize:9}}>{size}</label><input className="da-input" style={{...inputStyle,fontSize:11}} type="number" placeholder={size} value={adminPromoForm.prices[size]} onChange={e=>setAdminPromoForm({...adminPromoForm,prices:{...adminPromoForm.prices,[size]:e.target.value}})} /></div>
-                    ))}
+                    {["100 ML","50 ML","20 ML","2 ML","KIT"].map(size => {
+                      const placeholderSize = {
+                        "100 ML": "€ 100ml",
+                        "50 ML": "€ 50ml",
+                        "20 ML": "€ 20ml",
+                        "2 ML": "€ 2ml",
+                        "KIT": "€ Kit"
+                      }[size];
+                      return (
+                        <div key={size}><label style={{...labelStyle,fontSize:9}}>{size}</label><input className="da-input" style={{...inputStyle,fontSize:11}} type="number" placeholder={placeholderSize} value={adminPromoForm.prices[size]} onChange={e=>setAdminPromoForm({...adminPromoForm,prices:{...adminPromoForm.prices,[size]:e.target.value}})} /></div>
+                      );
+                    })}
                   </div>
                 </div>
                 <button onClick={savePromoCode} style={{width:"100%",background:"#000",color:"#fff",border:"none",padding:"12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Save Code</button>
@@ -970,6 +1002,8 @@ table{border-collapse:collapse;width:100%;}
                 <div className="da-order-actions" style={{display:"flex",gap:8}}>
                   <button className="da-btn da-btn-outline" onClick={()=>handleViewInvoice(order.id,"admin")} style={{background:"transparent",border:"1px solid #ddd",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#333",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>View Invoice</button>
                   {!order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>cancelOrder(order.id)} style={{background:"transparent",border:"1px solid #dc2626",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#dc2626",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Cancel</button>}
+                  {order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>restoreOrder(order.id)} style={{background:"transparent",border:"1px solid #2563eb",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#2563eb",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Restore</button>}
+                  {order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>deleteOrder(order.id)} style={{background:"transparent",border:"1px solid #dc2626",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#dc2626",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Delete</button>}
                 </div>
                 <NoteSection orderId={order.id} notes={order.notes} isAdminView={true} noteInputs={noteInputs} setNoteInputs={setNoteInputs} addNote={addNote} />
               </div>
@@ -984,7 +1018,10 @@ table{border-collapse:collapse;width:100%;}
   if (view === "invoice") {
     const displayId = viewingOrderId || orderNumber;
     const cur = allOrders.find(o => o.id === displayId);
-    const inv = cur || {buyer,totalWSP,vatInfo,vatAmount,shipping:shippingAmount,totalWithVat,depositAmount,balanceAmount:Math.round((totalWithVat-depositAmount)*100)/100,lines:orderLines,cancelled:false};
+    const curDepositTotal = cur ? cur.deposit_amount + (cur.shipping_amount || 0) : depositInvoiceTotal;
+    const curBalance = cur ? cur.balance_amount : Math.round((totalBeforeShipping - depositAmount) * 100) / 100;
+    const inv = cur || {buyer,totalWSP,vatInfo,vatAmount,shipping:shippingAmount,totalWithVat,depositAmount,depositInvoiceTotal,balanceAmount:curBalance,lines:orderLines,cancelled:false};
+    if (cur && !cur.depositInvoiceTotal) inv.depositInvoiceTotal = curDepositTotal;
     const invDate = cur ? new Date(cur.date) : new Date();
     const due = new Date(invDate); due.setDate(due.getDate()+7);
     const fmtDate = d => d.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});
@@ -1029,13 +1066,13 @@ table{border-collapse:collapse;width:100%;}
               {inv.shipping>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:11,color:"#666",borderBottom:"1px solid #f0f0f0"}}><span>Shipping</span><span>{formatEUR(inv.shipping)}</span></div>}
               <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:11,color:"#666",borderBottom:"1px solid #f0f0f0"}}><span>Total incl. VAT &amp; Shipping</span><span style={{fontWeight:500}}>{formatEUR(inv.totalWithVat)}</span></div>
               <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:11,color:"#666",borderBottom:"1px solid #f0f0f0"}}><span>Deposit Rate</span><span>30%</span></div>
-              <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",fontSize:16,fontWeight:700,borderTop:"2px solid #000",marginTop:6}}><span>Amount Due</span><span>{formatEUR(inv.depositAmount)}</span></div>
+              <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",fontSize:16,fontWeight:700,borderTop:"2px solid #000",marginTop:6}}><span>Amount Due</span><span>{formatEUR(inv.depositInvoiceTotal || inv.depositAmount)}</span></div>
             </div></div>
             {inv.vatInfo&&<div style={{marginTop:14,fontSize:10,color:"#999",fontStyle:"italic"}}>{inv.vatInfo.note}</div>}
             <div style={{marginTop:20,paddingTop:16,borderTop:"1px solid #eee",fontSize:10,color:"#666",lineHeight:1.7}}>
               <div style={{fontSize:9,textTransform:"uppercase",letterSpacing:"0.14em",color:"#bbb",marginBottom:8}}>Payment Details</div>
               <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:"3px 14px"}}><span style={{color:"#999"}}>Bank</span><span>{SELLER.bank}</span><span style={{color:"#999"}}>REG</span><span>{SELLER.reg}</span><span style={{color:"#999"}}>Account</span><span>{SELLER.account}</span><span style={{color:"#999"}}>IBAN</span><span style={{fontWeight:500,letterSpacing:"0.03em"}}>{SELLER.iban}</span><span style={{color:"#999"}}>BIC/SWIFT</span><span>{SELLER.swift}</span></div>
-              <div style={{marginTop:14,padding:"10px 14px",background:"#fafafa",borderRadius:8,color:"#888",fontSize:10,lineHeight:1.6}}>Order will be confirmed upon receipt of the 30% deposit ({formatEUR(inv.depositAmount)}). Remaining 70% ({formatEUR(inv.balanceAmount||(inv.totalWithVat-inv.depositAmount))}) is due prior to shipment.</div>
+              <div style={{marginTop:14,padding:"10px 14px",background:"#fafafa",borderRadius:8,color:"#888",fontSize:10,lineHeight:1.6}}>Order will be confirmed upon receipt of the 30% deposit ({formatEUR(inv.depositAmount)}) plus shipping ({formatEUR(inv.shipping||0)}) = {formatEUR(inv.depositInvoiceTotal || (inv.depositAmount + (inv.shipping || 0)))}. Remaining 70% ({formatEUR(inv.balanceAmount||(inv.totalBeforeShipping-inv.depositAmount))}) is due prior to shipment. Shipping included in deposit invoice.</div>
             </div>
           </div>
         </div></FadeIn>
