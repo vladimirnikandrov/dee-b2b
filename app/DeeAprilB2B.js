@@ -128,6 +128,7 @@ const PROMO_CODES_DEFAULT = [
 const CSS = `
   @keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
   @keyframes slideUp { from { opacity:0; transform:translateY(40px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes slideUpCenter { from { opacity:0; transform:translateX(-50%) translateY(40px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
   @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
   @keyframes scaleIn { from { opacity:0; transform:scale(0.95); } to { opacity:1; transform:scale(1); } }
   @keyframes toastIn { from { opacity:0; transform:translateY(20px) scale(0.95); } to { opacity:1; transform:translateY(0) scale(1); } }
@@ -407,7 +408,7 @@ export default function DeeAprilB2B() {
       totalWSP: Number(o.total_wsp),
       vatInfo: { rate: Number(o.vat_rate), label: o.vat_label, note: o.vat_note },
       vatAmount: Number(o.vat_amount),
-      shipping: Number(o.shipping || 0),
+      shipping: Number(o.shipping_amount || o.shipping || 0),
       totalWithVat: Number(o.total_with_vat),
       depositAmount: Number(o.deposit_amount),
       balanceAmount: Number(o.balance_amount),
@@ -798,7 +799,7 @@ table{border-collapse:collapse;width:100%;}
         })}
       </div>
       {totalItems > 0 && (
-        <div className="da-floating-bar" style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#000",color:"#fff",borderRadius:20,padding:"16px 20px 16px 28px",display:"flex",alignItems:"center",gap:24,boxShadow:"0 8px 40px rgba(0,0,0,0.25)",animation:"slideUp 0.4s cubic-bezier(0.23,1,0.32,1)",zIndex:30,maxWidth:520}}>
+        <div className="da-floating-bar" style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#000",color:"#fff",borderRadius:20,padding:"16px 20px 16px 28px",display:"flex",alignItems:"center",gap:24,boxShadow:"0 8px 40px rgba(0,0,0,0.25)",animation:"slideUpCenter 0.4s cubic-bezier(0.23,1,0.32,1)",zIndex:30,maxWidth:520}}>
           <div style={{display:"flex",alignItems:"baseline",gap:10,whiteSpace:"nowrap"}}>
             <span style={{fontSize:12,opacity:0.6}}>{totalItems} item{totalItems!==1?"s":""}</span>
             <span style={{fontSize:18,fontWeight:600,letterSpacing:"0.02em"}}>{formatEUR(totalWSP)}</span>
@@ -816,17 +817,17 @@ table{border-collapse:collapse;width:100%;}
     return (
       <div style={base}>
         <Header right={<UserNav />} />
-        <div className="da-grid-checkout" style={{display:"grid",gridTemplateColumns:"1fr 420px",gap:0,minHeight:"calc(100vh - 80px)"}}>
+        <div className="da-grid-checkout" style={{display:"grid",gridTemplateColumns:"1fr 380px",gap:0,minHeight:"calc(100vh - 80px)"}}>
           <FadeIn delay={0.1}><div className="da-pad" style={{padding:"40px 48px"}}>
-            <div style={{fontSize:15,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Promo Code</div>
-            <div style={{display:"flex",gap:8,marginBottom:32}}>
+            <div style={{fontSize:13,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Promo Code</div>
+            <div style={{display:"flex",gap:8,marginBottom:28}}>
               <input className="da-input" style={{...inputStyle,flex:1}} placeholder="MOODSCENTBAR" value={promoCodeInput} onChange={e=>setPromoCodeInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&applyPromoCode()} />
               <button onClick={applyPromoCode} style={{background:"#000",color:"#fff",border:"none",padding:"12px 20px",borderRadius:10,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,whiteSpace:"nowrap"}}>Apply</button>
             </div>
-            {appliedPromo && <div style={{padding:"12px 16px",background:"#f0f8f0",border:"1px solid #d0e0d0",borderRadius:10,fontSize:11,color:"#2d6a2d",marginBottom:24,fontWeight:500}}>✓ {appliedPromo.label} pricing applied</div>}
-            {promoError && <div style={{padding:"12px 16px",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,fontSize:11,color:"#dc2626",marginBottom:24}}>{promoError}</div>}
-            <div style={{fontSize:15,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Buyer Details</div>
-            <div style={{fontSize:12,color:"#aaa",marginBottom:32}}>Company details for deposit invoice generation</div>
+            {appliedPromo && <div style={{padding:"10px 14px",background:"#f0f8f0",border:"1px solid #d0e0d0",borderRadius:10,fontSize:11,color:"#2d6a2d",marginBottom:20,fontWeight:500}}>✓ {appliedPromo.label} pricing applied</div>}
+            {promoError && <div style={{padding:"10px 14px",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,fontSize:11,color:"#dc2626",marginBottom:20}}>{promoError}</div>}
+            <div style={{fontSize:13,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Buyer Details</div>
+            <div style={{fontSize:11,color:"#aaa",marginBottom:24}}>Company details for deposit invoice generation</div>
             <div style={{display:"grid",gap:18,maxWidth:500}}>
               <div><label style={labelStyle}>Company Name *</label><input className="da-input" style={inputStyle} value={buyer.company} onChange={e=>setBuyer({...buyer,company:e.target.value})} placeholder="Company Ltd."/></div>
               <div><label style={labelStyle}>Contact Person</label><input className="da-input" style={inputStyle} value={buyer.contact} onChange={e=>setBuyer({...buyer,contact:e.target.value})} placeholder="Full name"/></div>
@@ -841,9 +842,9 @@ table{border-collapse:collapse;width:100%;}
             </div>
             {buyer.country && <FadeIn delay={0} style={{marginTop:24}}><div style={{padding:"14px 18px",background:"#f8f8f8",borderRadius:10,border:"1px solid #f0f0f0",fontSize:11,lineHeight:1.6}}><div style={{fontWeight:600,color:"#000",marginBottom:4}}>{vatInfo.label}</div><div style={{color:"#888"}}>{vatInfo.note}</div></div></FadeIn>}
           </div></FadeIn>
-          <FadeIn delay={0.2}><div className="da-checkout-summary da-pad" style={{padding:"40px 32px",background:"#fff",borderLeft:"1px solid #f0f0f0",minHeight:"100%"}}>
-            <div style={{fontSize:13,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:24}}>Order Summary</div>
-            <div style={{marginBottom:24}}>{orderLines.map((line,i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"12px 0",borderBottom:"1px solid #f5f5f5",fontSize:12}}><div><div style={{fontWeight:500}}>{line.product}</div><div style={{color:"#bbb",fontSize:10,marginTop:3}}>{SIZE_LABELS[line.size]} — {line.sku}</div></div><div style={{textAlign:"right"}}><div style={{color:"#888"}}>{line.qty} × {formatEUR(line.unitPrice)}</div><div style={{fontWeight:600,marginTop:2}}>{formatEUR(line.total)}</div></div></div>))}</div>
+          <FadeIn delay={0.2}><div className="da-checkout-summary da-pad" style={{padding:"32px 28px",background:"#fafafa",borderLeft:"1px solid #f0f0f0",minHeight:"100%"}}>
+            <div style={{fontSize:11,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:20,color:"#666"}}>Order Summary</div>
+            <div style={{marginBottom:20}}>{orderLines.map((line,i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"10px 0",borderBottom:"1px solid #eee",fontSize:12}}><div><div style={{fontWeight:500}}>{line.product}</div><div style={{color:"#bbb",fontSize:10,marginTop:2}}>{SIZE_LABELS[line.size]}</div></div><div style={{textAlign:"right"}}><div style={{color:"#888",fontSize:11}}>{line.qty} × {formatEUR(line.unitPrice)}</div><div style={{fontWeight:600,marginTop:1}}>{formatEUR(line.total)}</div></div></div>))}</div>
             <div style={{paddingTop:16,borderTop:"1px solid #eee"}}>
               <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:8,color:"#666"}}><span>Subtotal (excl. VAT)</span><span style={{fontWeight:500,color:"#333"}}>{formatEUR(totalWSP)}</span></div>
               {vatAmount>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:8,color:"#666"}}><span>{vatInfo.label}</span><span style={{fontWeight:500,color:"#333"}}>{formatEUR(vatAmount)}</span></div>}
@@ -851,12 +852,12 @@ table{border-collapse:collapse;width:100%;}
               {shippingAmount>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:8,color:"#666"}}><span>Shipping</span><span style={{fontWeight:500,color:"#333"}}>{formatEUR(shippingAmount)}</span></div>}
               <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:600,paddingTop:8,borderTop:"1px solid #eee"}}><span>Total</span><span>{formatEUR(totalWithVat)}</span></div>
             </div>
-            <div style={{marginTop:16,padding:"20px 0 0",borderTop:"2px solid #000"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><div><div style={{fontSize:10,textTransform:"uppercase",letterSpacing:"0.1em",color:"#999"}}>Deposit Invoice</div><div style={{fontSize:10,color:"#bbb",marginTop:2}}>30% advance + shipping</div></div><span style={{fontSize:22,fontWeight:600}}>{formatEUR(depositInvoiceTotal)}</span></div>
+            <div style={{marginTop:14,padding:"16px 0 0",borderTop:"2px solid #000"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><div><div style={{fontSize:10,textTransform:"uppercase",letterSpacing:"0.1em",color:"#999"}}>Deposit Invoice</div><div style={{fontSize:10,color:"#bbb",marginTop:2}}>30% advance + shipping</div></div><span style={{fontSize:20,fontWeight:600}}>{formatEUR(depositInvoiceTotal)}</span></div>
             </div>
-            <div style={{display:"flex",gap:10,marginTop:28,flexWrap:"wrap"}}>
-              <button className="da-btn da-btn-outline" onClick={()=>setView("catalog")} style={{flex:"0 0 auto",background:"transparent",border:"1px solid #ddd",padding:"15px 20px",borderRadius:12,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color:"#333",transition:"all 0.25s"}}>Back</button>
-              <button className="da-btn" onClick={()=>{if(canSubmit){askConfirm({title:"Confirm Order",message:`You are about to place order ${orderNumber} for ${formatEUR(totalWithVat)}. A 30% deposit invoice (${formatEUR(depositAmount)}) will be generated.`,confirmLabel:"Place Order",danger:false,onConfirm:async ()=>{closeConfirm();await handleSubmitOrder();}});}}} disabled={!canSubmit} style={{flex:1,background:canSubmit?"#000":"#e0e0e0",color:canSubmit?"#fff":"#999",border:"none",padding:"15px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:canSubmit?"pointer":"default",fontFamily:FONT}}>Place Order & Generate Invoice</button>
+            <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:24}}>
+              <button className="da-btn" onClick={()=>{if(canSubmit){askConfirm({title:"Confirm Order",message:`You are about to place order ${orderNumber} for ${formatEUR(totalWithVat)}. A 30% deposit invoice (${formatEUR(depositAmount)}) will be generated.`,confirmLabel:"Place Order",danger:false,onConfirm:async ()=>{closeConfirm();await handleSubmitOrder();}});}}} disabled={!canSubmit} style={{width:"100%",background:canSubmit?"#000":"#e0e0e0",color:canSubmit?"#fff":"#999",border:"none",padding:"14px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:canSubmit?"pointer":"default",fontFamily:FONT}}>Place Order & Generate Invoice</button>
+              <button className="da-btn da-btn-outline" onClick={()=>setView("catalog")} style={{width:"100%",background:"transparent",border:"1px solid #ddd",padding:"12px",borderRadius:12,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color:"#333",transition:"all 0.25s"}}>Back to Catalog</button>
             </div>
           </div></FadeIn>
         </div>
@@ -901,6 +902,7 @@ table{border-collapse:collapse;width:100%;}
         )}
       </div></FadeIn>
       <Toast message={toast.message} visible={toast.visible} onHide={hideToast} />
+      <ConfirmModal {...confirm} onCancel={closeConfirm} />
     </div>
   );
 
@@ -1012,13 +1014,14 @@ table{border-collapse:collapse;width:100%;}
         )}
       </div>
       <Toast message={toast.message} visible={toast.visible} onHide={hideToast} />
+      <ConfirmModal {...confirm} onCancel={closeConfirm} />
     </div>
   );
 
   if (view === "invoice") {
     const displayId = viewingOrderId || orderNumber;
     const cur = allOrders.find(o => o.id === displayId);
-    const curDepositTotal = cur ? cur.deposit_amount + (cur.shipping_amount || 0) : depositInvoiceTotal;
+    const curDepositTotal = cur ? cur.depositAmount + (cur.shipping || 0) : depositInvoiceTotal;
     const curBalance = cur ? cur.balance_amount : Math.round((totalBeforeShipping - depositAmount) * 100) / 100;
     const inv = cur || {buyer,totalWSP,vatInfo,vatAmount,shipping:shippingAmount,totalWithVat,depositAmount,depositInvoiceTotal,balanceAmount:curBalance,lines:orderLines,cancelled:false};
     if (cur && !cur.depositInvoiceTotal) inv.depositInvoiceTotal = curDepositTotal;
