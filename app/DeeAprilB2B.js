@@ -567,10 +567,12 @@ export default function DeeAprilB2B() {
     });
   };
 
-    const cancelOrder = (orderId) => {
+    const cancelOrder = (orderId, fromAdmin) => {
     askConfirm({
       title: "Cancel Order",
-      message: `Are you sure you want to cancel order ${orderId}? This action cannot be undone.`,
+      message: fromAdmin
+        ? `Cancel order ${orderId}? You can restore it later.`
+        : `Cancel order ${orderId}? Contact us if you need to reinstate it.`,
       confirmLabel: "Cancel Order",
       danger: true,
       onConfirm: async () => {
@@ -817,49 +819,59 @@ table{border-collapse:collapse;width:100%;}
     return (
       <div style={base}>
         <Header right={<UserNav />} />
-        <div className="da-grid-checkout" style={{display:"grid",gridTemplateColumns:"1fr 380px",gap:0,minHeight:"calc(100vh - 80px)"}}>
-          <FadeIn delay={0.1}><div className="da-pad" style={{padding:"40px 48px"}}>
-            <div style={{fontSize:13,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Promo Code</div>
-            <div style={{display:"flex",gap:8,marginBottom:28}}>
-              <input className="da-input" style={{...inputStyle,flex:1}} placeholder="MOODSCENTBAR" value={promoCodeInput} onChange={e=>setPromoCodeInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&applyPromoCode()} />
-              <button onClick={applyPromoCode} style={{background:"#000",color:"#fff",border:"none",padding:"12px 20px",borderRadius:10,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,whiteSpace:"nowrap"}}>Apply</button>
-            </div>
-            {appliedPromo && <div style={{padding:"10px 14px",background:"#f0f8f0",border:"1px solid #d0e0d0",borderRadius:10,fontSize:11,color:"#2d6a2d",marginBottom:20,fontWeight:500}}>✓ {appliedPromo.label} pricing applied</div>}
-            {promoError && <div style={{padding:"10px 14px",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,fontSize:11,color:"#dc2626",marginBottom:20}}>{promoError}</div>}
-            <div style={{fontSize:13,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:6}}>Buyer Details</div>
-            <div style={{fontSize:11,color:"#aaa",marginBottom:24}}>Company details for deposit invoice generation</div>
-            <div style={{display:"grid",gap:18,maxWidth:500}}>
-              <div><label style={labelStyle}>Company Name *</label><input className="da-input" style={inputStyle} value={buyer.company} onChange={e=>setBuyer({...buyer,company:e.target.value})} placeholder="Company Ltd."/></div>
-              <div><label style={labelStyle}>Contact Person</label><input className="da-input" style={inputStyle} value={buyer.contact} onChange={e=>setBuyer({...buyer,contact:e.target.value})} placeholder="Full name"/></div>
-              <div><label style={labelStyle}>Address *</label><input className="da-input" style={inputStyle} value={buyer.address} onChange={e=>setBuyer({...buyer,address:e.target.value})} placeholder="Street address"/></div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-                <div><label style={labelStyle}>City *</label><input className="da-input" style={inputStyle} value={buyer.city} onChange={e=>setBuyer({...buyer,city:e.target.value})}/></div>
-                <div><label style={labelStyle}>ZIP / Postal Code</label><input className="da-input" style={inputStyle} value={buyer.zip} onChange={e=>setBuyer({...buyer,zip:e.target.value})}/></div>
+        <div style={{maxWidth:1060,margin:"0 auto",padding:"0 24px"}}>
+          <div className="da-grid-checkout" style={{display:"grid",gridTemplateColumns:"1.1fr 1fr",gap:48,paddingTop:40,paddingBottom:60}}>
+            <FadeIn delay={0.1}><div>
+              <div style={{fontSize:13,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:28}}>Buyer Details</div>
+              <div style={{display:"grid",gap:16}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+                  <div><label style={labelStyle}>Company Name *</label><input className="da-input" style={inputStyle} value={buyer.company} onChange={e=>setBuyer({...buyer,company:e.target.value})} placeholder="Company Ltd."/></div>
+                  <div><label style={labelStyle}>Contact Person</label><input className="da-input" style={inputStyle} value={buyer.contact} onChange={e=>setBuyer({...buyer,contact:e.target.value})} placeholder="Full name"/></div>
+                </div>
+                <div><label style={labelStyle}>Address *</label><input className="da-input" style={inputStyle} value={buyer.address} onChange={e=>setBuyer({...buyer,address:e.target.value})} placeholder="Street address"/></div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
+                  <div><label style={labelStyle}>City *</label><input className="da-input" style={inputStyle} value={buyer.city} onChange={e=>setBuyer({...buyer,city:e.target.value})}/></div>
+                  <div><label style={labelStyle}>ZIP</label><input className="da-input" style={inputStyle} value={buyer.zip} onChange={e=>setBuyer({...buyer,zip:e.target.value})}/></div>
+                  <div><label style={labelStyle}>Country *</label><input className="da-input" style={inputStyle} value={buyer.country} onChange={e=>setBuyer({...buyer,country:e.target.value})} placeholder="e.g. France"/></div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+                  <div><label style={labelStyle}>VAT Number</label><input className="da-input" style={inputStyle} value={buyer.vat} onChange={e=>setBuyer({...buyer,vat:e.target.value})} placeholder="e.g. DK12345678"/></div>
+                  <div><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={buyer.email} onChange={e=>setBuyer({...buyer,email:e.target.value})}/></div>
+                </div>
+                {buyer.vat && <div style={{fontSize:10,color:"#999",lineHeight:1.5,marginTop:-8}}>EU buyers: provide valid VAT number for reverse charge (0% VAT)</div>}
               </div>
-              <div><label style={labelStyle}>Country *</label><input className="da-input" style={inputStyle} value={buyer.country} onChange={e=>setBuyer({...buyer,country:e.target.value})} placeholder="e.g. France, Denmark, USA"/></div>
-              <div><label style={labelStyle}>VAT Number</label><input className="da-input" style={inputStyle} value={buyer.vat} onChange={e=>setBuyer({...buyer,vat:e.target.value})} placeholder="e.g. DK12345678"/><div style={{fontSize:10,color:"#bbb",marginTop:6,lineHeight:1.5}}>EU buyers: provide valid VAT number for reverse charge (0% VAT)</div></div>
-              <div><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={buyer.email} onChange={e=>setBuyer({...buyer,email:e.target.value})}/></div>
-            </div>
-            {buyer.country && <FadeIn delay={0} style={{marginTop:24}}><div style={{padding:"14px 18px",background:"#f8f8f8",borderRadius:10,border:"1px solid #f0f0f0",fontSize:11,lineHeight:1.6}}><div style={{fontWeight:600,color:"#000",marginBottom:4}}>{vatInfo.label}</div><div style={{color:"#888"}}>{vatInfo.note}</div></div></FadeIn>}
-          </div></FadeIn>
-          <FadeIn delay={0.2}><div className="da-checkout-summary da-pad" style={{padding:"32px 28px",background:"#fafafa",borderLeft:"1px solid #f0f0f0",minHeight:"100%"}}>
-            <div style={{fontSize:11,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:20,color:"#666"}}>Order Summary</div>
-            <div style={{marginBottom:20}}>{orderLines.map((line,i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"10px 0",borderBottom:"1px solid #eee",fontSize:12}}><div><div style={{fontWeight:500}}>{line.product}</div><div style={{color:"#bbb",fontSize:10,marginTop:2}}>{SIZE_LABELS[line.size]}</div></div><div style={{textAlign:"right"}}><div style={{color:"#888",fontSize:11}}>{line.qty} × {formatEUR(line.unitPrice)}</div><div style={{fontWeight:600,marginTop:1}}>{formatEUR(line.total)}</div></div></div>))}</div>
-            <div style={{paddingTop:16,borderTop:"1px solid #eee"}}>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:8,color:"#666"}}><span>Subtotal (excl. VAT)</span><span style={{fontWeight:500,color:"#333"}}>{formatEUR(totalWSP)}</span></div>
-              {vatAmount>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:8,color:"#666"}}><span>{vatInfo.label}</span><span style={{fontWeight:500,color:"#333"}}>{formatEUR(vatAmount)}</span></div>}
-              {vatInfo.rate===0&&buyer.country&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:8,color:"#999"}}><span>VAT</span><span>{vatInfo.label}</span></div>}
-              {shippingAmount>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:8,color:"#666"}}><span>Shipping</span><span style={{fontWeight:500,color:"#333"}}>{formatEUR(shippingAmount)}</span></div>}
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:600,paddingTop:8,borderTop:"1px solid #eee"}}><span>Total</span><span>{formatEUR(totalWithVat)}</span></div>
-            </div>
-            <div style={{marginTop:14,padding:"16px 0 0",borderTop:"2px solid #000"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><div><div style={{fontSize:10,textTransform:"uppercase",letterSpacing:"0.1em",color:"#999"}}>Deposit Invoice</div><div style={{fontSize:10,color:"#bbb",marginTop:2}}>30% advance + shipping</div></div><span style={{fontSize:20,fontWeight:600}}>{formatEUR(depositInvoiceTotal)}</span></div>
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:24}}>
-              <button className="da-btn" onClick={()=>{if(canSubmit){askConfirm({title:"Confirm Order",message:`You are about to place order ${orderNumber} for ${formatEUR(totalWithVat)}. A 30% deposit invoice (${formatEUR(depositAmount)}) will be generated.`,confirmLabel:"Place Order",danger:false,onConfirm:async ()=>{closeConfirm();await handleSubmitOrder();}});}}} disabled={!canSubmit} style={{width:"100%",background:canSubmit?"#000":"#e0e0e0",color:canSubmit?"#fff":"#999",border:"none",padding:"14px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:canSubmit?"pointer":"default",fontFamily:FONT}}>Place Order & Generate Invoice</button>
-              <button className="da-btn da-btn-outline" onClick={()=>setView("catalog")} style={{width:"100%",background:"transparent",border:"1px solid #ddd",padding:"12px",borderRadius:12,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color:"#333",transition:"all 0.25s"}}>Back to Catalog</button>
-            </div>
-          </div></FadeIn>
+              {buyer.country && <div style={{padding:"12px 16px",background:"#f8f8f8",borderRadius:10,border:"1px solid #f0f0f0",fontSize:11,lineHeight:1.6,marginTop:20}}><span style={{fontWeight:600,color:"#000"}}>{vatInfo.label}</span><span style={{color:"#888",marginLeft:8}}>{vatInfo.note}</span></div>}
+              <div style={{marginTop:28,padding:"20px",background:"#f8f8f8",borderRadius:12,border:"1px solid #f0f0f0"}}>
+                <div style={{fontSize:10,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",color:"#999",marginBottom:10}}>Promo Code</div>
+                <div style={{display:"flex",gap:8}}>
+                  <input className="da-input" style={{...inputStyle,flex:1,fontSize:12}} placeholder="Enter code" value={promoCodeInput} onChange={e=>setPromoCodeInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&applyPromoCode()} />
+                  <button onClick={applyPromoCode} style={{background:"#000",color:"#fff",border:"none",padding:"10px 18px",borderRadius:10,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:FONT,whiteSpace:"nowrap",letterSpacing:"0.06em",textTransform:"uppercase"}}>Apply</button>
+                </div>
+                {appliedPromo && <div style={{marginTop:10,fontSize:11,color:"#2d6a2d",fontWeight:500}}>✓ {appliedPromo.label} pricing applied</div>}
+                {promoError && <div style={{marginTop:10,fontSize:11,color:"#dc2626"}}>{promoError}</div>}
+              </div>
+            </div></FadeIn>
+            <FadeIn delay={0.2}><div>
+              <div className="da-checkout-summary" style={{background:"#fff",border:"1px solid #eee",borderRadius:16,padding:"28px 24px",position:"sticky",top:100}}>
+                <div style={{fontSize:11,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:16,color:"#666"}}>Order Summary</div>
+                <div style={{marginBottom:16}}>{orderLines.map((line,i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"10px 0",borderBottom:"1px solid #f5f5f5",fontSize:12}}><div><div style={{fontWeight:500}}>{line.product}</div><div style={{color:"#bbb",fontSize:10,marginTop:2}}>{SIZE_LABELS[line.size]}</div></div><div style={{textAlign:"right",whiteSpace:"nowrap"}}><div style={{color:"#888",fontSize:11}}>{line.qty} × {formatEUR(line.unitPrice)}</div><div style={{fontWeight:600,marginTop:1}}>{formatEUR(line.total)}</div></div></div>))}</div>
+                <div style={{paddingTop:12,borderTop:"1px solid #eee"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:6,color:"#666"}}><span>Subtotal</span><span style={{fontWeight:500,color:"#333"}}>{formatEUR(totalWSP)}</span></div>
+                  {vatAmount>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:6,color:"#666"}}><span>{vatInfo.label}</span><span style={{fontWeight:500,color:"#333"}}>{formatEUR(vatAmount)}</span></div>}
+                  {vatInfo.rate===0&&buyer.country&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:6,color:"#999"}}><span>VAT</span><span>{vatInfo.label}</span></div>}
+                  {shippingAmount>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:6,color:"#666"}}><span>Shipping</span><span style={{fontWeight:500,color:"#333"}}>{formatEUR(shippingAmount)}</span></div>}
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:600,paddingTop:8,borderTop:"1px solid #eee"}}><span>Total</span><span>{formatEUR(totalWithVat)}</span></div>
+                </div>
+                <div style={{marginTop:12,padding:"14px 0 0",borderTop:"2px solid #000"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><div><div style={{fontSize:10,textTransform:"uppercase",letterSpacing:"0.1em",color:"#999"}}>Deposit Invoice</div><div style={{fontSize:10,color:"#bbb",marginTop:2}}>30% advance + shipping</div></div><span style={{fontSize:20,fontWeight:600}}>{formatEUR(depositInvoiceTotal)}</span></div>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:20}}>
+                  <button className="da-btn" onClick={()=>{if(canSubmit){askConfirm({title:"Confirm Order",message:`Place order ${orderNumber} for ${formatEUR(totalWithVat)}? A 30% deposit invoice of ${formatEUR(depositInvoiceTotal)} will be generated.`,confirmLabel:"Place Order",danger:false,onConfirm:async ()=>{closeConfirm();await handleSubmitOrder();}});}}} disabled={!canSubmit} style={{width:"100%",background:canSubmit?"#000":"#e0e0e0",color:canSubmit?"#fff":"#999",border:"none",padding:"14px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:canSubmit?"pointer":"default",fontFamily:FONT}}>Place Order</button>
+                  <button className="da-btn da-btn-outline" onClick={()=>setView("catalog")} style={{width:"100%",background:"transparent",border:"1px solid #ddd",padding:"12px",borderRadius:12,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color:"#333",transition:"all 0.25s"}}>Back to Catalog</button>
+                </div>
+              </div>
+            </div></FadeIn>
+          </div>
         </div>
         <Toast message={toast.message} visible={toast.visible} onHide={hideToast} />
         <ConfirmModal {...confirm} onCancel={closeConfirm} />
@@ -894,7 +906,7 @@ table{border-collapse:collapse;width:100%;}
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                   <button className="da-btn da-btn-outline" onClick={()=>handleViewInvoice(order.id,"myorders")} style={{background:"transparent",border:"1px solid #ddd",padding:"9px 20px",borderRadius:10,fontSize:10,color:"#333",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>View Invoice</button>
                   <button className="da-btn da-btn-outline" onClick={()=>repeatOrder(order)} style={{background:"transparent",border:"1px solid #ddd",padding:"9px 20px",borderRadius:10,fontSize:10,color:"#333",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Repeat Order</button>
-                  {canClientCancel(order) && <button className="da-btn da-btn-outline" onClick={()=>cancelOrder(order.id)} style={{background:"transparent",border:"1px solid #dc2626",padding:"9px 20px",borderRadius:10,fontSize:10,color:"#dc2626",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Cancel</button>}
+                  {canClientCancel(order) && <button className="da-btn da-btn-outline" onClick={()=>cancelOrder(order.id,false)} style={{background:"transparent",border:"1px solid #dc2626",padding:"9px 20px",borderRadius:10,fontSize:10,color:"#dc2626",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Cancel</button>}
                 </div>
               </div>
             ))}
@@ -1003,7 +1015,7 @@ table{border-collapse:collapse;width:100%;}
                 </div>
                 <div className="da-order-actions" style={{display:"flex",gap:8}}>
                   <button className="da-btn da-btn-outline" onClick={()=>handleViewInvoice(order.id,"admin")} style={{background:"transparent",border:"1px solid #ddd",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#333",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>View Invoice</button>
-                  {!order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>cancelOrder(order.id)} style={{background:"transparent",border:"1px solid #dc2626",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#dc2626",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Cancel</button>}
+                  {!order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>cancelOrder(order.id,true)} style={{background:"transparent",border:"1px solid #dc2626",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#dc2626",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Cancel</button>}
                   {order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>restoreOrder(order.id)} style={{background:"transparent",border:"1px solid #2563eb",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#2563eb",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Restore</button>}
                   {order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>deleteOrder(order.id)} style={{background:"transparent",border:"1px solid #dc2626",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#dc2626",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Delete</button>}
                 </div>
