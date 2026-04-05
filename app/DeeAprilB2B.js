@@ -89,6 +89,11 @@ const SELLER = {
 
 const SHIPPING_FLAT = 35;
 
+// e-conomic API — tokens to be configured by client
+const ECONOMIC_APP_SECRET = ""; // App Secret Token — set in Supabase env or here
+const ECONOMIC_AGREEMENT = ""; // Agreement Grant Token — set in Supabase env or here
+const ECONOMIC_API = "https://restapi.e-conomic.com";
+
 const FONT = "'Helvetica Neue', Helvetica, Arial, sans-serif";
 const base = { fontFamily: FONT, color: "#000", background: "#fafafa", minHeight: "100vh", margin: 0, padding: 0 };
 const inputStyle = { width: "100%", padding: "12px 16px", border: "1px solid #e5e5e5", fontSize: 13, fontFamily: FONT, outline: "none", borderRadius: 10, background: "#fff", transition: "border-color 0.2s", boxSizing: "border-box" };
@@ -334,6 +339,13 @@ export default function DeeAprilB2B() {
 
   const [noteInputs, setNoteInputs] = useState({});
 
+  // Feature 2: Order Editing
+  const [editingOrderId, setEditingOrderId] = useState(null);
+  const [editQtys, setEditQtys] = useState({});
+
+  // Feature 3: Inventory Management
+  const [inventory, setInventory] = useState({});
+
   const getQty = (sku) => quantities[sku] || 0;
   const setQty = (sku, val) => setQuantities((q) => ({ ...q, [sku]: val }));
 
@@ -374,6 +386,7 @@ export default function DeeAprilB2B() {
 
   useEffect(() => {
     loadPromoCodes();
+    loadInventory();
   }, []);
 
   const loadPromoCodes = async () => {
@@ -388,6 +401,39 @@ export default function DeeAprilB2B() {
       }
     } catch (e) {
       setPromoCodes(PROMO_CODES_DEFAULT);
+    }
+  };
+
+  // Feature 3: Load and save inventory
+  const loadInventory = async () => {
+    try {
+      const { data, error } = await supabase.from("inventory").select("*");
+      if (error) {
+        setInventory({});
+      } else if (data && data.length > 0) {
+        const inv = {};
+        data.forEach(row => {
+          inv[row.sku] = row.stock;
+        });
+        setInventory(inv);
+      }
+    } catch (e) {
+      setInventory({});
+    }
+  };
+
+  const saveInventory = async () => {
+    try {
+      const records = [];
+      PRODUCTS.forEach(p => {
+        p.variants.forEach(v => {
+          records.push({ sku: v.sku, product_name: p.name, size: v.size, stock: inventory[v.sku] || 0 });
+        });
+      });
+      await supabase.from("inventory").upsert(records, { onConflict: "sku" });
+      showToast("Inventory saved");
+    } catch (e) {
+      showToast("Error saving inventory: " + e.message);
     }
   };
 
@@ -507,6 +553,75 @@ export default function DeeAprilB2B() {
     setPromoCodeInput("");
   };
 
+  // Feature 1: e-conomic Integration
+  const syncToEconomic = async (orderData) => {
+    if (!ECONOMIC_APP_SECRET) return; // Skip if not configured
+
+    try {
+      const headers = {
+        "X-AppSecretToken": ECONOMIC_APP_SECRET,
+        "X-AgreementGrantToken": ECONOMIC_AGREEMENT,
+        "Content-Type": "application/json"
+      };
+
+      // 1. Search for existing customer by company name
+      const custSearchUrl = `${ECONOMIC_API}/customers?filter=name$eq:${encodeURIComponent(orderData.buyer.company)}`;
+      const custSearchRes = await fetch(custSearchUrl, { method: "GET", headers });
+      const custSearchData = await custSearchRes.json();
+
+      let customerId;
+      if (custSearchData.collection && custSearchData.collection.length > 0) {
+        customerId = custSearchData.collection[0].customerNumber;
+      } else {
+        // 2. Create new customer
+        const custPayload = {
+          name: orderData.buyer.company,
+          address: orderData.buyer.address || "",
+          city: orderData.buyer.city || "",
+          zipCode: orderData.buyer.zip || "",
+          country: orderData.buyer.country || "",
+          email: orderData.buyer.email || "",
+          currency: "EUR",
+          vatZone: { vatZoneNumber: 1 },
+          customerGroup: { customerGroupNumber: 1 },
+          paymentTerms: { paymentTermsNumber: 1 }
+        };
+        const custRes = await fetch(`${ECONOMIC_API}/customers`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(custPayload)
+        });
+        const custData = await custRes.json();
+        customerId = custData.customerNumber;
+      }
+
+      // 3. Create draft invoice
+      const invPayload = {
+        customer: { customerNumber: customerId },
+        date: new Date().toISOString().split("T")[0],
+        currency: "EUR",
+        paymentTerms: { paymentTermsNumber: 1 },
+        layout: { layoutNumber: 1 },
+        lines: orderData.lines.map(line => ({
+          description: `${line.product} ${line.size}`,
+          quantity: line.qty,
+          unitNetPrice: line.unitPrice
+        }))
+      };
+
+      await fetch(`${ECONOMIC_API}/invoices/drafts`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(invPayload)
+      });
+
+      console.log("e-conomic sync successful for order", orderData.id);
+    } catch (err) {
+      console.error("e-conomic sync error:", err);
+      // Don't block order flow on e-conomic errors
+    }
+  };
+
   const handleSubmitOrder = async () => {
     await saveProfile();
     const { error } = await supabase.from("orders").insert({
@@ -523,6 +638,15 @@ export default function DeeAprilB2B() {
       promo_label: appliedPromo?.label || null,
     });
     if (error) { showToast("Error: " + error.message); return; }
+
+    // Sync to e-conomic after successful order insertion
+    if (ECONOMIC_APP_SECRET) {
+      await syncToEconomic({
+        id: orderNumber,
+        buyer: buyer,
+        lines: orderLines
+      });
+    }
 
     // TODO: Email notification to sales@deeapril.com
     // Option A: Supabase Database Webhook → sends POST to an email service (e.g., Resend, SendGrid)
@@ -588,6 +712,57 @@ export default function DeeAprilB2B() {
     if (order.cancelled) return false;
     const s = order.statuses;
     return s.deposit_invoiced && !s.deposit_paid && !s.packed && !s.balance_invoiced && !s.balance_paid && !s.shipped && !s.received;
+  };
+
+  // Feature 2: Handle order updates
+  const handleUpdateOrder = async (orderId) => {
+    // Check that all quantities are not zero
+    const totalQty = Object.values(editQtys).reduce((sum, q) => sum + (q || 0), 0);
+    if (totalQty === 0) {
+      showToast("At least one item must have quantity > 0");
+      return;
+    }
+
+    // Recalculate order totals based on new quantities
+    const updatedLines = [];
+    let newTotalWSP = 0;
+    const order = allOrders.find(o => o.id === orderId);
+
+    PRODUCTS.forEach((p) => p.variants.forEach((v) => {
+      const newQty = editQtys[v.sku] || 0;
+      if (newQty > 0) {
+        const unitPrice = order.lines.find(l => l.sku === v.sku)?.unitPrice || v.wsp;
+        updatedLines.push({ product: p.name, size: v.size, sku: v.sku, ean: v.ean, qty: newQty, unitPrice, total: newQty * unitPrice });
+        newTotalWSP += newQty * unitPrice;
+      }
+    }));
+
+    const newVatAmount = Math.round(newTotalWSP * order.vatInfo.rate * 100) / 100;
+    const newTotalBeforeShipping = newTotalWSP + newVatAmount;
+    const newShippingAmount = updatedLines.reduce((sum, l) => sum + l.qty, 0) > 0 ? SHIPPING_FLAT : 0;
+    const newTotalWithVat = newTotalBeforeShipping + newShippingAmount;
+    const newDepositAmount = Math.round(newTotalBeforeShipping * 0.3 * 100) / 100;
+    const newBalanceAmount = Math.round((newTotalBeforeShipping - newDepositAmount) * 100) / 100;
+
+    const { error } = await supabase.from("orders").update({
+      lines: updatedLines,
+      total_wsp: newTotalWSP,
+      vat_amount: newVatAmount,
+      shipping_amount: newShippingAmount,
+      total_with_vat: newTotalWithVat,
+      deposit_amount: newDepositAmount,
+      balance_amount: newBalanceAmount
+    }).eq("id", orderId);
+
+    if (error) {
+      showToast("Error updating order: " + error.message);
+      return;
+    }
+
+    setEditingOrderId(null);
+    setEditQtys({});
+    await loadOrders();
+    showToast("Order updated");
   };
 
   const repeatOrder = (order) => {
@@ -785,7 +960,13 @@ table{border-collapse:collapse;width:100%;}
                       {PRODUCT_IMAGES[v.size] ? <img src={PRODUCT_IMAGES[v.size]} alt={v.size} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <BottleSVG size={v.size} uniqueId={`${pi}_${vi}`} />}
                     </div>
                     <div style={{fontSize:12,lineHeight:1.9,color:"#333",flex:1}}>
-                      <div><span style={{fontWeight:700}}>SIZE</span> {v.size}</div>
+                      <div><span style={{fontWeight:700}}>SIZE</span> {v.size} {(() => {
+                        const stock = inventory[v.sku];
+                        if (stock === undefined || stock === null) return null;
+                        if (stock > 10) return <span style={{marginLeft:8,display:"inline-flex",alignItems:"center",gap:4}}><span style={{width:8,height:8,background:"#16a34a",borderRadius:"50%",display:"inline-block"}}></span><span style={{fontSize:10,color:"#16a34a"}}>In Stock</span></span>;
+                        if (stock > 0) return <span style={{marginLeft:8,display:"inline-flex",alignItems:"center",gap:4}}><span style={{width:8,height:8,background:"#eab308",borderRadius:"50%",display:"inline-block"}}></span><span style={{fontSize:10,color:"#b45309"}}>Few Left</span></span>;
+                        return <span style={{marginLeft:8,display:"inline-flex",alignItems:"center",gap:4}}><span style={{width:8,height:8,background:"#dc2626",borderRadius:"50%",display:"inline-block"}}></span><span style={{fontSize:10,color:"#dc2626"}}>Out of Stock</span></span>;
+                      })()}</div>
                       <div><span style={{fontWeight:700}}>SKU</span> {v.sku}</div>
                       {v.ean ? <div><span style={{fontWeight:700}}>EAN</span> {v.ean}</div> : null}
                       {v.rrp ? <div><span style={{fontWeight:700}}>RRP</span> EUR {v.rrp}</div> : <div style={{fontWeight:700,fontSize:11,color:"#999",fontStyle:"italic"}}>NOT FOR RETAIL SALE</div>}
@@ -900,13 +1081,36 @@ table{border-collapse:collapse;width:100%;}
                     <div style={{fontSize:10,color:"#999"}}>incl. shipping &amp; VAT</div>
                   </div>
                 </div>
-                <div style={{fontSize:12,color:"#666",marginBottom:12,paddingBottom:12,borderBottom:"1px solid #f0f0f0"}}>
-                  {order.lines.map((l,i) => <div key={i}>{l.product} — {SIZE_LABELS[l.size]} x{l.qty}</div>)}
-                </div>
+                {editingOrderId === order.id ? (
+                  <div style={{marginBottom:12,paddingBottom:12,borderBottom:"1px solid #f0f0f0"}}>
+                    <div style={{fontSize:10,color:"#999",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8,fontWeight:600}}>Edit Items</div>
+                    <div style={{display:"grid",gap:8}}>
+                      {order.lines.map((l,i) => (
+                        <div key={i} style={{display:"grid",gridTemplateColumns:"auto 1fr auto",gap:12,alignItems:"center",fontSize:11}}>
+                          <span style={{flex:1}}>{l.product} — {SIZE_LABELS[l.size]}</span>
+                          <input type="number" style={{...inputStyle,width:60,padding:"6px 8px",fontSize:11}} value={editQtys[l.sku]!==undefined?editQtys[l.sku]:l.qty} onChange={e=>setEditQtys({...editQtys,[l.sku]:parseInt(e.target.value)||0})} />
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{display:"flex",gap:8,marginTop:12}}>
+                      <button onClick={()=>handleUpdateOrder(order.id)} style={{background:"#000",color:"#fff",border:"none",padding:"8px 16px",borderRadius:8,fontSize:10,cursor:"pointer",fontFamily:FONT,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>Save</button>
+                      <button onClick={()=>{setEditingOrderId(null);setEditQtys({});}} style={{background:"transparent",border:"1px solid #ddd",color:"#333",padding:"8px 16px",borderRadius:8,fontSize:10,cursor:"pointer",fontFamily:FONT,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{fontSize:12,color:"#666",marginBottom:12,paddingBottom:12,borderBottom:"1px solid #f0f0f0"}}>
+                    {order.lines.map((l,i) => <div key={i}>{l.product} — {SIZE_LABELS[l.size]} x{l.qty}</div>)}
+                  </div>
+                )}
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                   <button className="da-btn da-btn-outline" onClick={()=>handleViewInvoice(order.id,"myorders")} style={{background:"transparent",border:"1px solid #ddd",padding:"9px 20px",borderRadius:10,fontSize:10,color:"#333",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>View Invoice</button>
-                  <button className="da-btn da-btn-outline" onClick={()=>repeatOrder(order)} style={{background:"transparent",border:"1px solid #ddd",padding:"9px 20px",borderRadius:10,fontSize:10,color:"#333",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Repeat Order</button>
-                  {canClientCancel(order) && <button className="da-btn da-btn-outline" onClick={()=>cancelOrder(order.id,false)} style={{background:"transparent",border:"1px solid #dc2626",padding:"9px 20px",borderRadius:10,fontSize:10,color:"#dc2626",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Cancel</button>}
+                  {editingOrderId === order.id ? null : (
+                    <>
+                      {!order.cancelled && !order.statuses.balance_paid && <button className="da-btn da-btn-outline" onClick={()=>{setEditingOrderId(order.id);setEditQtys(Object.fromEntries(order.lines.map(l=>[l.sku,l.qty])));}} style={{background:"transparent",border:"1px solid #ddd",padding:"9px 20px",borderRadius:10,fontSize:10,color:"#333",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Edit</button>}
+                      <button className="da-btn da-btn-outline" onClick={()=>repeatOrder(order)} style={{background:"transparent",border:"1px solid #ddd",padding:"9px 20px",borderRadius:10,fontSize:10,color:"#333",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Repeat Order</button>
+                      {canClientCancel(order) && <button className="da-btn da-btn-outline" onClick={()=>cancelOrder(order.id,false)} style={{background:"transparent",border:"1px solid #dc2626",padding:"9px 20px",borderRadius:10,fontSize:10,color:"#dc2626",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Cancel</button>}
+                    </>
+                  )}
                 </div>
               </div>
             ))}
@@ -968,6 +1172,28 @@ table{border-collapse:collapse;width:100%;}
           )}
         </div>
 
+        <div style={{background:"#fff",borderRadius:12,border:"1px solid #e0e0e0",marginBottom:32}}>
+          <button onClick={()=>setAdminExpanded(adminExpanded==="inventory"?null:"inventory")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:FONT}}>
+            Inventory
+            <span style={{fontSize:16}}>{adminExpanded==="inventory"?"−":"+"}</span>
+          </button>
+          {adminExpanded==="inventory" && (
+            <div style={{borderTop:"1px solid #f0f0f0",padding:"20px"}}>
+              <div style={{fontSize:10,color:"#999",marginBottom:16,letterSpacing:"0.08em",textTransform:"uppercase",fontWeight:600}}>Current Stock</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16,maxHeight:"400px",overflowY:"auto"}}>
+                {PRODUCTS.map((p,pi) => p.variants.map((v,vi) => (
+                  <div key={`${pi}-${vi}`} style={{padding:"12px",background:"#f9f9f9",borderRadius:8,border:"1px solid #f0f0f0"}}>
+                    <div style={{fontSize:10,fontWeight:600,color:"#333",marginBottom:4}}>{p.name}</div>
+                    <div style={{fontSize:9,color:"#999",marginBottom:8}}>{v.size}</div>
+                    <input type="number" className="da-input" style={{...inputStyle,fontSize:11,padding:"8px 12px"}} value={inventory[v.sku]||0} onChange={e=>setInventory({...inventory,[v.sku]:parseInt(e.target.value)||0})} placeholder="Stock"/>
+                  </div>
+                )))}
+              </div>
+              <button onClick={saveInventory} style={{width:"100%",background:"#000",color:"#fff",border:"none",padding:"12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Save All</button>
+            </div>
+          )}
+        </div>
+
         <div style={{fontSize:15,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:20}}>Orders ({allOrders.length})</div>
         <div style={{display:"flex",gap:10,marginBottom:24}}>
           <button className="da-btn" onClick={exportCSV} style={{background:"#000",color:"#fff",border:"none",padding:"11px 20px",borderRadius:10,fontSize:10,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>Export CSV</button>
@@ -999,12 +1225,30 @@ table{border-collapse:collapse;width:100%;}
                     <div style={{fontSize:12}}>{new Date(order.date).toLocaleDateString("en-GB")}</div>
                   </div>
                 </div>
-                <div style={{paddingBottom:20,borderBottom:"1px solid #f0f0f0"}}>
-                  <div style={{fontSize:10,color:"#999",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Items</div>
-                  <div style={{display:"grid",gap:4}}>
-                    {order.lines.map((l,i) => <div key={i} style={{fontSize:11,color:"#666"}}>{l.product} {SIZE_LABELS[l.size]} × {l.qty} @ {formatEUR(l.unitPrice)}</div>)}
+                {editingOrderId === order.id ? (
+                  <div style={{paddingBottom:20,borderBottom:"1px solid #f0f0f0"}}>
+                    <div style={{fontSize:10,color:"#999",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8,fontWeight:600}}>Edit Items</div>
+                    <div style={{display:"grid",gap:8,marginBottom:12}}>
+                      {order.lines.map((l,i) => (
+                        <div key={i} style={{display:"grid",gridTemplateColumns:"auto 1fr auto",gap:12,alignItems:"center",fontSize:11}}>
+                          <span style={{flex:1}}>{l.product} — {SIZE_LABELS[l.size]} @ {formatEUR(l.unitPrice)}</span>
+                          <input type="number" style={{...inputStyle,width:60,padding:"6px 8px",fontSize:11}} value={editQtys[l.sku]!==undefined?editQtys[l.sku]:l.qty} onChange={e=>setEditQtys({...editQtys,[l.sku]:parseInt(e.target.value)||0})} />
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{display:"flex",gap:8}}>
+                      <button onClick={()=>handleUpdateOrder(order.id)} style={{background:"#000",color:"#fff",border:"none",padding:"8px 16px",borderRadius:8,fontSize:10,cursor:"pointer",fontFamily:FONT,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>Save</button>
+                      <button onClick={()=>{setEditingOrderId(null);setEditQtys({});}} style={{background:"transparent",border:"1px solid #ddd",color:"#333",padding:"8px 16px",borderRadius:8,fontSize:10,cursor:"pointer",fontFamily:FONT,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>Cancel</button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div style={{paddingBottom:20,borderBottom:"1px solid #f0f0f0"}}>
+                    <div style={{fontSize:10,color:"#999",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Items</div>
+                    <div style={{display:"grid",gap:4}}>
+                      {order.lines.map((l,i) => <div key={i} style={{fontSize:11,color:"#666"}}>{l.product} {SIZE_LABELS[l.size]} × {l.qty} @ {formatEUR(l.unitPrice)}</div>)}
+                    </div>
+                  </div>
+                )}
                 <div style={{paddingTop:16,marginBottom:16}}>
                   <div style={{fontSize:10,color:"#999",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Status</div>
                   <div className="da-status-bar" style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -1015,9 +1259,14 @@ table{border-collapse:collapse;width:100%;}
                 </div>
                 <div className="da-order-actions" style={{display:"flex",gap:8}}>
                   <button className="da-btn da-btn-outline" onClick={()=>handleViewInvoice(order.id,"admin")} style={{background:"transparent",border:"1px solid #ddd",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#333",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>View Invoice</button>
-                  {!order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>cancelOrder(order.id,true)} style={{background:"transparent",border:"1px solid #dc2626",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#dc2626",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Cancel</button>}
-                  {order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>restoreOrder(order.id)} style={{background:"transparent",border:"1px solid #2563eb",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#2563eb",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Restore</button>}
-                  {order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>deleteOrder(order.id)} style={{background:"transparent",border:"1px solid #dc2626",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#dc2626",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Delete</button>}
+                  {editingOrderId === order.id ? null : (
+                    <>
+                      {!order.cancelled && !order.statuses.balance_paid && <button className="da-btn da-btn-outline" onClick={()=>{setEditingOrderId(order.id);setEditQtys(Object.fromEntries(order.lines.map(l=>[l.sku,l.qty])));}} style={{background:"transparent",border:"1px solid #ddd",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#333",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Edit</button>}
+                      {!order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>cancelOrder(order.id,true)} style={{background:"transparent",border:"1px solid #dc2626",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#dc2626",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Cancel</button>}
+                      {order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>restoreOrder(order.id)} style={{background:"transparent",border:"1px solid #2563eb",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#2563eb",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Restore</button>}
+                      {order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>deleteOrder(order.id)} style={{background:"transparent",border:"1px solid #dc2626",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#dc2626",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Delete</button>}
+                    </>
+                  )}
                 </div>
                 <NoteSection orderId={order.id} notes={order.notes} isAdminView={true} noteInputs={noteInputs} setNoteInputs={setNoteInputs} addNote={addNote} />
               </div>
