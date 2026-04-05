@@ -197,9 +197,11 @@ function BottleSVG({ size, uniqueId }) {
   return (<svg viewBox="0 0 100 200" style={{width:"100%",height:"100%",maxHeight:160}}><defs><linearGradient id={gid("b")} x1="0" y1="0" x2="1" y2="0.15"><stop offset="0%" stopColor="#333"/><stop offset="30%" stopColor="#1a1a1a"/><stop offset="70%" stopColor="#0f0f0f"/><stop offset="100%" stopColor="#181818"/></linearGradient><filter id={gid("s")} x="-20%" y="-10%" width="140%" height="130%"><feDropShadow dx="3" dy="5" stdDeviation="5" floodOpacity="0.18"/></filter></defs><g filter={`url(#${gid("s")})`}><rect x="32" y={y-18} width="36" height="18" rx="4" fill="#1a1a1a"/><rect x="39" y={y-30} width="22" height="14" rx="5" fill="#252525"/><rect x="24" y={y} width="52" height={h} rx="6" fill={`url(#${gid("b")})`}/><rect x="28" y={y+4} width="14" height={h-18} rx="4" fill="rgba(255,255,255,0.05)"/></g></svg>);
 }
 
-function QtyInput({ value, onChange }) {
+function QtyInput({ value, onChange, max }) {
+  const atMax = max !== undefined && max !== null && value >= max;
   const s = {width:32,height:32,border:"none",background:"transparent",cursor:"pointer",fontSize:14,color:"#888",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:FONT,padding:0};
-  return (<div style={{display:"inline-flex",alignItems:"center",borderRadius:8,border:"1px solid #e0e0e0",overflow:"hidden",background:"#fff"}}><button className="da-qty-btn" onClick={()=>onChange(Math.max(0,value-1))} style={s}>−</button><input type="number" min="0" value={value} onChange={(e)=>onChange(Math.max(0,parseInt(e.target.value)||0))} style={{width:36,height:32,border:"none",borderLeft:"1px solid #eee",borderRight:"1px solid #eee",textAlign:"center",fontSize:12,fontWeight:500,fontFamily:FONT,outline:"none",background:"transparent",padding:0}}/><button className="da-qty-btn" onClick={()=>onChange(value+1)} style={s}>+</button></div>);
+  const clamp = (v) => { let n = Math.max(0, v); if (max !== undefined && max !== null) n = Math.min(n, max); return n; };
+  return (<div style={{display:"inline-flex",alignItems:"center",borderRadius:8,border:`1px solid ${atMax?"#eab308":"#e0e0e0"}`,overflow:"hidden",background:"#fff"}}><button className="da-qty-btn" onClick={()=>onChange(Math.max(0,value-1))} style={s}>−</button><input type="number" min="0" max={max} value={value} onChange={(e)=>onChange(clamp(parseInt(e.target.value)||0))} style={{width:36,height:32,border:"none",borderLeft:"1px solid #eee",borderRight:"1px solid #eee",textAlign:"center",fontSize:12,fontWeight:500,fontFamily:FONT,outline:"none",background:"transparent",padding:0}}/><button className="da-qty-btn" onClick={()=>onChange(clamp(value+1))} style={{...s,opacity:atMax?0.3:1,cursor:atMax?"default":"pointer"}}>+</button></div>);
 }
 
 function FadeIn({ children, delay = 0, style = {} }) {
@@ -347,7 +349,12 @@ export default function DeeAprilB2B() {
   const [inventory, setInventory] = useState({});
 
   const getQty = (sku) => quantities[sku] || 0;
-  const setQty = (sku, val) => setQuantities((q) => ({ ...q, [sku]: val }));
+  const getStock = (sku) => { const s = inventory[sku]; return (s !== undefined && s !== null) ? s : null; };
+  const setQty = (sku, val) => {
+    const stock = getStock(sku);
+    const clamped = stock !== null ? Math.min(Math.max(0, val), stock) : Math.max(0, val);
+    setQuantities((q) => ({ ...q, [sku]: clamped }));
+  };
 
   const orderLines = [];
   let totalWSP = 0;
@@ -623,6 +630,19 @@ export default function DeeAprilB2B() {
   };
 
   const handleSubmitOrder = async () => {
+    // Validate stock availability
+    const stockIssues = [];
+    orderLines.forEach(line => {
+      const stock = getStock(line.sku);
+      if (stock !== null && line.qty > stock) {
+        stockIssues.push(`${line.product} ${line.size}: requested ${line.qty}, available ${stock}`);
+      }
+    });
+    if (stockIssues.length > 0) {
+      showToast("Insufficient stock: " + stockIssues[0]);
+      return;
+    }
+
     await saveProfile();
     const { error } = await supabase.from("orders").insert({
       id: orderNumber,
@@ -720,6 +740,22 @@ export default function DeeAprilB2B() {
     const totalQty = Object.values(editQtys).reduce((sum, q) => sum + (q || 0), 0);
     if (totalQty === 0) {
       showToast("At least one item must have quantity > 0");
+      return;
+    }
+
+    // Validate stock
+    const stockIssues = [];
+    Object.entries(editQtys).forEach(([sku, qty]) => {
+      if (qty > 0) {
+        const stock = getStock(sku);
+        if (stock !== null && qty > stock) {
+          const prod = PRODUCTS.flatMap(p => p.variants.map(v => ({...v, product: p.name}))).find(v => v.sku === sku);
+          stockIssues.push(`${prod?.product || sku} ${prod?.size || ""}: requested ${qty}, available ${stock}`);
+        }
+      }
+    });
+    if (stockIssues.length > 0) {
+      showToast("Insufficient stock: " + stockIssues[0]);
       return;
     }
 
@@ -972,7 +1008,14 @@ table{border-collapse:collapse;width:100%;}
                       {v.rrp ? <div><span style={{fontWeight:700}}>RRP</span> EUR {v.rrp}</div> : <div style={{fontWeight:700,fontSize:11,color:"#999",fontStyle:"italic"}}>NOT FOR RETAIL SALE</div>}
                       <div><span style={{fontWeight:700}}>WSP</span> EUR {v.wsp}</div>
                     </div>
-                    <div style={{marginTop:12}}><QtyInput value={qty} onChange={val => setQty(v.sku, val)} /></div>
+                    {getStock(v.sku) === 0 ? (
+                      <div style={{marginTop:12,fontSize:11,color:"#dc2626",fontWeight:500}}>Out of Stock</div>
+                    ) : (
+                      <div style={{marginTop:12}}>
+                        <QtyInput value={qty} onChange={val => setQty(v.sku, val)} max={getStock(v.sku)} />
+                        {getStock(v.sku) !== null && qty >= getStock(v.sku) && qty > 0 && <div style={{fontSize:10,color:"#b45309",marginTop:4}}>Max available: {getStock(v.sku)}</div>}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1085,12 +1128,17 @@ table{border-collapse:collapse;width:100%;}
                   <div style={{marginBottom:12,paddingBottom:12,borderBottom:"1px solid #f0f0f0"}}>
                     <div style={{fontSize:10,color:"#999",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8,fontWeight:600}}>Edit Items</div>
                     <div style={{display:"grid",gap:8}}>
-                      {order.lines.map((l,i) => (
-                        <div key={i} style={{display:"grid",gridTemplateColumns:"auto 1fr auto",gap:12,alignItems:"center",fontSize:11}}>
-                          <span style={{flex:1}}>{l.product} — {SIZE_LABELS[l.size]}</span>
-                          <input type="number" style={{...inputStyle,width:60,padding:"6px 8px",fontSize:11}} value={editQtys[l.sku]!==undefined?editQtys[l.sku]:l.qty} onChange={e=>setEditQtys({...editQtys,[l.sku]:parseInt(e.target.value)||0})} />
+                      {order.lines.map((l,i) => {
+                        const stock = getStock(l.sku);
+                        const maxVal = stock !== null ? stock : undefined;
+                        return (
+                        <div key={i} style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:8,alignItems:"center",fontSize:11}}>
+                          <span>{l.product} — {SIZE_LABELS[l.size]}</span>
+                          <input type="number" min="0" max={maxVal} style={{...inputStyle,width:60,padding:"6px 8px",fontSize:11}} value={editQtys[l.sku]!==undefined?editQtys[l.sku]:l.qty} onChange={e=>{let v=parseInt(e.target.value)||0; if(stock!==null)v=Math.min(v,stock); setEditQtys({...editQtys,[l.sku]:Math.max(0,v)});}} />
+                          {stock !== null && <span style={{fontSize:9,color:"#999"}}>(max {stock})</span>}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                     <div style={{display:"flex",gap:8,marginTop:12}}>
                       <button onClick={()=>handleUpdateOrder(order.id)} style={{background:"#000",color:"#fff",border:"none",padding:"8px 16px",borderRadius:8,fontSize:10,cursor:"pointer",fontFamily:FONT,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>Save</button>
@@ -1229,12 +1277,17 @@ table{border-collapse:collapse;width:100%;}
                   <div style={{paddingBottom:20,borderBottom:"1px solid #f0f0f0"}}>
                     <div style={{fontSize:10,color:"#999",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8,fontWeight:600}}>Edit Items</div>
                     <div style={{display:"grid",gap:8,marginBottom:12}}>
-                      {order.lines.map((l,i) => (
-                        <div key={i} style={{display:"grid",gridTemplateColumns:"auto 1fr auto",gap:12,alignItems:"center",fontSize:11}}>
-                          <span style={{flex:1}}>{l.product} — {SIZE_LABELS[l.size]} @ {formatEUR(l.unitPrice)}</span>
-                          <input type="number" style={{...inputStyle,width:60,padding:"6px 8px",fontSize:11}} value={editQtys[l.sku]!==undefined?editQtys[l.sku]:l.qty} onChange={e=>setEditQtys({...editQtys,[l.sku]:parseInt(e.target.value)||0})} />
+                      {order.lines.map((l,i) => {
+                        const stock = getStock(l.sku);
+                        const maxVal = stock !== null ? stock : undefined;
+                        return (
+                        <div key={i} style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:8,alignItems:"center",fontSize:11}}>
+                          <span>{l.product} — {SIZE_LABELS[l.size]} @ {formatEUR(l.unitPrice)}</span>
+                          <input type="number" min="0" max={maxVal} style={{...inputStyle,width:60,padding:"6px 8px",fontSize:11}} value={editQtys[l.sku]!==undefined?editQtys[l.sku]:l.qty} onChange={e=>{let v=parseInt(e.target.value)||0; if(stock!==null)v=Math.min(v,stock); setEditQtys({...editQtys,[l.sku]:Math.max(0,v)});}} />
+                          {stock !== null && <span style={{fontSize:9,color:"#999"}}>(max {stock})</span>}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                     <div style={{display:"flex",gap:8}}>
                       <button onClick={()=>handleUpdateOrder(order.id)} style={{background:"#000",color:"#fff",border:"none",padding:"8px 16px",borderRadius:8,fontSize:10,cursor:"pointer",fontFamily:FONT,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>Save</button>
