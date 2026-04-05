@@ -310,6 +310,8 @@ export default function DeeAprilB2B() {
   const [adminPw, setAdminPw] = useState("");
   const [adminError, setAdminError] = useState("");
   const [adminExpanded, setAdminExpanded] = useState(null);
+  const [adminCompanyFilter, setAdminCompanyFilter] = useState(null);
+  const [adminStatusFilter, setAdminStatusFilter] = useState("all");
   const [allOrders, setAllOrders] = useState([]);
   const [quantities, setQuantities] = useState({});
   const [view, setView] = useState("landing");
@@ -675,6 +677,16 @@ export default function DeeAprilB2B() {
     // Uncomment and configure when email endpoint is ready:
     // fetch("https://YOUR_EMAIL_ENDPOINT", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ to: "sales@deeapril.com", subject: `New Order ${orderNumber}`, orderNumber, buyer: buyer, total: totalWithVat }) });
 
+    // Deduct stock from inventory
+    for (const line of orderLines) {
+      const currentStock = inventory[line.sku];
+      if (currentStock !== undefined && currentStock !== null) {
+        const newStock = Math.max(0, currentStock - line.qty);
+        await supabase.from("inventory").update({ stock: newStock }).eq("sku", line.sku);
+        setInventory(prev => ({ ...prev, [line.sku]: newStock }));
+      }
+    }
+
     await loadOrders();
     setView("invoice");
     showToast("Order placed — " + orderNumber);
@@ -686,12 +698,14 @@ export default function DeeAprilB2B() {
     const order = allOrders.find(o => o.id === orderId);
     if (!order) return;
     const dbKey = "status_" + key;
-    await supabase.from("orders").update({ [dbKey]: !order.statuses[key] }).eq("id", orderId);
+    const { error } = await supabase.from("orders").update({ [dbKey]: !order.statuses[key] }).eq("id", orderId);
+    if (error) { console.error("Status toggle error:", error); showToast("Failed to update status — " + error.message); return; }
     setAllOrders(prev => prev.map(o => o.id === orderId ? {...o, statuses:{...o.statuses,[key]:!o.statuses[key]}} : o));
   };
 
   const restoreOrder = async (orderId) => {
-    await supabase.from("orders").update({ cancelled: false }).eq("id", orderId);
+    const { error } = await supabase.from("orders").update({ cancelled: false }).eq("id", orderId);
+    if (error) { console.error("Restore error:", error); showToast("Failed to restore — " + error.message); return; }
     setAllOrders(prev => prev.map(o => o.id === orderId ? {...o, cancelled:false} : o));
     showToast("Order " + orderId + " restored");
   };
@@ -703,7 +717,8 @@ export default function DeeAprilB2B() {
       confirmLabel: "Delete",
       danger: true,
       onConfirm: async () => {
-        await supabase.from("orders").delete().eq("id", orderId);
+        const { error } = await supabase.from("orders").delete().eq("id", orderId);
+        if (error) { console.error("Delete error:", error); showToast("Failed to delete — " + error.message); closeConfirm(); return; }
         setAllOrders(prev => prev.filter(o => o.id !== orderId));
         closeConfirm();
         showToast("Order " + orderId + " deleted");
@@ -711,7 +726,7 @@ export default function DeeAprilB2B() {
     });
   };
 
-    const cancelOrder = (orderId, fromAdmin) => {
+  const cancelOrder = (orderId, fromAdmin) => {
     askConfirm({
       title: "Cancel Order",
       message: fromAdmin
@@ -720,7 +735,8 @@ export default function DeeAprilB2B() {
       confirmLabel: "Cancel Order",
       danger: true,
       onConfirm: async () => {
-        await supabase.from("orders").update({ cancelled: true }).eq("id", orderId);
+        const { error } = await supabase.from("orders").update({ cancelled: true }).eq("id", orderId);
+        if (error) { console.error("Cancel error:", error); showToast("Failed to cancel — " + error.message); closeConfirm(); return; }
         setAllOrders(prev => prev.map(o => o.id === orderId ? {...o, cancelled:true} : o));
         closeConfirm();
         showToast("Order " + orderId + " cancelled");
@@ -883,7 +899,10 @@ table{border-collapse:collapse;width:100%;}
     showToast("Promo code deleted");
   };
 
-  useEffect(() => { if (view === "admin" || view === "myorders") loadOrders(); }, [view]);
+  useEffect(() => {
+    if (view === "admin" || view === "myorders") loadOrders();
+    if (view === "catalog") loadInventory();
+  }, [view]);
 
   const Header = ({ right }) => (
     <div className="da-header-pad" style={{background:"#fff",padding:"20px 48px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #eee",position:"sticky",top:0,zIndex:20,backdropFilter:"blur(12px)",flexWrap:"wrap",gap:12}}>
@@ -1008,14 +1027,16 @@ table{border-collapse:collapse;width:100%;}
                       {v.rrp ? <div><span style={{fontWeight:700}}>RRP</span> EUR {v.rrp}</div> : <div style={{fontWeight:700,fontSize:11,color:"#999",fontStyle:"italic"}}>NOT FOR RETAIL SALE</div>}
                       <div><span style={{fontWeight:700}}>WSP</span> EUR {v.wsp}</div>
                     </div>
-                    {getStock(v.sku) === 0 ? (
-                      <div style={{marginTop:12,fontSize:11,color:"#dc2626",fontWeight:500}}>Out of Stock</div>
-                    ) : (
-                      <div style={{marginTop:12}}>
-                        <QtyInput value={qty} onChange={val => setQty(v.sku, val)} max={getStock(v.sku)} />
-                        {getStock(v.sku) !== null && qty >= getStock(v.sku) && qty > 0 && <div style={{fontSize:10,color:"#b45309",marginTop:4}}>Max available: {getStock(v.sku)}</div>}
-                      </div>
-                    )}
+                    <div style={{marginTop:12,minHeight:52}}>
+                      {getStock(v.sku) === 0 ? (
+                        <div style={{fontSize:11,color:"#dc2626",fontWeight:500,lineHeight:"32px"}}>Out of Stock</div>
+                      ) : (
+                        <>
+                          <QtyInput value={qty} onChange={val => setQty(v.sku, val)} max={getStock(v.sku)} />
+                          <div style={{fontSize:10,color:"#b45309",marginTop:4,height:14,lineHeight:"14px"}}>{getStock(v.sku) !== null && qty >= getStock(v.sku) && qty > 0 ? `Max available: ${getStock(v.sku)}` : "\u00A0"}</div>
+                        </>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -1134,7 +1155,7 @@ table{border-collapse:collapse;width:100%;}
                         return (
                         <div key={i} style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:8,alignItems:"center",fontSize:11}}>
                           <span>{l.product} — {SIZE_LABELS[l.size]}</span>
-                          <input type="number" min="0" max={maxVal} style={{...inputStyle,width:60,padding:"6px 8px",fontSize:11}} value={editQtys[l.sku]!==undefined?editQtys[l.sku]:l.qty} onChange={e=>{let v=parseInt(e.target.value)||0; if(stock!==null)v=Math.min(v,stock); setEditQtys({...editQtys,[l.sku]:Math.max(0,v)});}} />
+                          <input type="number" min="0" max={maxVal} style={{...inputStyle,width:60,padding:"6px 8px",fontSize:11}} value={editQtys[l.sku]!==undefined?editQtys[l.sku]:l.qty} onChange={e=>{const raw=e.target.value;if(raw===""){setEditQtys({...editQtys,[l.sku]:0});return;}let v=parseInt(raw,10)||0;if(stock!==null)v=Math.min(v,stock);setEditQtys({...editQtys,[l.sku]:Math.max(0,v)});}} />
                           {stock !== null && <span style={{fontSize:9,color:"#999"}}>(max {stock})</span>}
                         </div>
                         );
@@ -1233,7 +1254,7 @@ table{border-collapse:collapse;width:100%;}
                   <div key={`${pi}-${vi}`} style={{padding:"12px",background:"#f9f9f9",borderRadius:8,border:"1px solid #f0f0f0"}}>
                     <div style={{fontSize:10,fontWeight:600,color:"#333",marginBottom:4}}>{p.name}</div>
                     <div style={{fontSize:9,color:"#999",marginBottom:8}}>{v.size}</div>
-                    <input type="number" className="da-input" style={{...inputStyle,fontSize:11,padding:"8px 12px"}} value={inventory[v.sku]||0} onChange={e=>setInventory({...inventory,[v.sku]:parseInt(e.target.value)||0})} placeholder="Stock"/>
+                    <input type="number" className="da-input" style={{...inputStyle,fontSize:11,padding:"8px 12px"}} value={inventory[v.sku]!==undefined?inventory[v.sku]:""} onChange={e=>setInventory({...inventory,[v.sku]:e.target.value===""?0:parseInt(e.target.value)||0})} placeholder="0"/>
                   </div>
                 )))}
               </div>
@@ -1242,15 +1263,66 @@ table{border-collapse:collapse;width:100%;}
           )}
         </div>
 
-        <div style={{fontSize:15,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:20}}>Orders ({allOrders.length})</div>
-        <div style={{display:"flex",gap:10,marginBottom:24}}>
+        {/* ── Company Cards ── */}
+        {(() => {
+          const companies = [...new Set(allOrders.map(o => o.buyer.company).filter(Boolean))].sort();
+          const companyStats = companies.map(c => {
+            const orders = allOrders.filter(o => o.buyer.company === c);
+            const total = orders.reduce((s, o) => s + (o.totalWithVat || 0), 0);
+            const active = orders.filter(o => !o.cancelled).length;
+            return { name: c, count: orders.length, active, total };
+          });
+          return companies.length > 0 && (
+            <div style={{marginBottom:32}}>
+              <div style={{fontSize:15,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:16}}>Companies ({companies.length})</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
+                <button onClick={()=>setAdminCompanyFilter(null)} style={{padding:"16px",borderRadius:10,border:adminCompanyFilter===null?"2px solid #000":"1px solid #e0e0e0",background:adminCompanyFilter===null?"#000":"#fff",color:adminCompanyFilter===null?"#fff":"#333",cursor:"pointer",fontFamily:FONT,textAlign:"left",transition:"all 0.2s"}}>
+                  <div style={{fontSize:11,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase"}}>All Companies</div>
+                  <div style={{fontSize:20,fontWeight:600,marginTop:8}}>{allOrders.length}</div>
+                  <div style={{fontSize:9,color:adminCompanyFilter===null?"rgba(255,255,255,0.6)":"#999",marginTop:2,letterSpacing:"0.06em",textTransform:"uppercase"}}>{formatEUR(allOrders.reduce((s,o)=>s+(o.totalWithVat||0),0))} total</div>
+                </button>
+                {companyStats.map(c => (
+                  <button key={c.name} onClick={()=>setAdminCompanyFilter(c.name)} style={{padding:"16px",borderRadius:10,border:adminCompanyFilter===c.name?"2px solid #000":"1px solid #e0e0e0",background:adminCompanyFilter===c.name?"#000":"#fff",color:adminCompanyFilter===c.name?"#fff":"#333",cursor:"pointer",fontFamily:FONT,textAlign:"left",transition:"all 0.2s"}}>
+                    <div style={{fontSize:11,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
+                    <div style={{fontSize:20,fontWeight:600,marginTop:8}}>{c.count}</div>
+                    <div style={{fontSize:9,color:adminCompanyFilter===c.name?"rgba(255,255,255,0.6)":"#999",marginTop:2,letterSpacing:"0.06em",textTransform:"uppercase"}}>{c.active} active · {formatEUR(c.total)}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── Orders Header + Filters ── */}
+        {(() => {
+          const statusFilters = [
+            { key: "all", label: "All" },
+            { key: "active", label: "Active" },
+            { key: "cancelled", label: "Cancelled" },
+            ...ORDER_STATUSES.map(s => ({ key: s.key, label: s.label }))
+          ];
+          const filtered = allOrders.filter(o => {
+            if (adminCompanyFilter && o.buyer.company !== adminCompanyFilter) return false;
+            if (adminStatusFilter === "all") return true;
+            if (adminStatusFilter === "active") return !o.cancelled;
+            if (adminStatusFilter === "cancelled") return o.cancelled;
+            return o.statuses[adminStatusFilter] === true;
+          });
+          return (<>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:12}}>
+          <div style={{fontSize:15,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase"}}>Orders ({filtered.length}{adminCompanyFilter || adminStatusFilter !== "all" ? ` / ${allOrders.length}` : ""})</div>
           <button className="da-btn" onClick={exportCSV} style={{background:"#000",color:"#fff",border:"none",padding:"11px 20px",borderRadius:10,fontSize:10,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>Export CSV</button>
         </div>
-        {allOrders.length === 0 ? (
-          <div style={{padding:"40px",textAlign:"center",color:"#999",background:"#f9f9f9",borderRadius:12}}>No orders yet</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:24}}>
+          {statusFilters.map(f => (
+            <button key={f.key} onClick={()=>setAdminStatusFilter(f.key)} style={{padding:"7px 14px",borderRadius:8,fontSize:10,fontWeight:adminStatusFilter===f.key?600:400,border:adminStatusFilter===f.key?"2px solid #000":"1px solid #e0e0e0",background:adminStatusFilter===f.key?"#000":"transparent",color:adminStatusFilter===f.key?"#fff":"#666",cursor:"pointer",fontFamily:FONT,textTransform:"uppercase",letterSpacing:"0.08em",transition:"all 0.2s"}}>{f.label}</button>
+          ))}
+        </div>
+        {filtered.length === 0 ? (
+          <div style={{padding:"40px",textAlign:"center",color:"#999",background:"#f9f9f9",borderRadius:12}}>No orders match filters</div>
         ) : (
           <div style={{display:"grid",gap:24}}>
-            {allOrders.map(order => (
+            {filtered.map(order => (
               <div key={order.id} style={{background:"#fff",borderRadius:12,border:"1px solid #e0e0e0",padding:"24px"}}>
                 <div className="da-admin-details" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:20,marginBottom:20}}>
                   <div>
@@ -1283,7 +1355,7 @@ table{border-collapse:collapse;width:100%;}
                         return (
                         <div key={i} style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:8,alignItems:"center",fontSize:11}}>
                           <span>{l.product} — {SIZE_LABELS[l.size]} @ {formatEUR(l.unitPrice)}</span>
-                          <input type="number" min="0" max={maxVal} style={{...inputStyle,width:60,padding:"6px 8px",fontSize:11}} value={editQtys[l.sku]!==undefined?editQtys[l.sku]:l.qty} onChange={e=>{let v=parseInt(e.target.value)||0; if(stock!==null)v=Math.min(v,stock); setEditQtys({...editQtys,[l.sku]:Math.max(0,v)});}} />
+                          <input type="number" min="0" max={maxVal} style={{...inputStyle,width:60,padding:"6px 8px",fontSize:11}} value={editQtys[l.sku]!==undefined?editQtys[l.sku]:l.qty} onChange={e=>{const raw=e.target.value;if(raw===""){setEditQtys({...editQtys,[l.sku]:0});return;}let v=parseInt(raw,10)||0;if(stock!==null)v=Math.min(v,stock);setEditQtys({...editQtys,[l.sku]:Math.max(0,v)});}} />
                           {stock !== null && <span style={{fontSize:9,color:"#999"}}>(max {stock})</span>}
                         </div>
                         );
@@ -1326,6 +1398,8 @@ table{border-collapse:collapse;width:100%;}
             ))}
           </div>
         )}
+          </>);
+        })()}
       </div>
       <Toast message={toast.message} visible={toast.visible} onHide={hideToast} />
       <ConfirmModal {...confirm} onCancel={closeConfirm} />
