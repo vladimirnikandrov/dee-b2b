@@ -688,8 +688,15 @@ export default function DeeAprilB2B() {
     }
 
     await loadOrders();
+    const placedOrderNumber = orderNumber;
+    setViewingOrderId(placedOrderNumber);
+    setInvoiceSource("buyer");
     setView("invoice");
-    showToast("Order placed — " + orderNumber);
+    showToast("Order placed — " + placedOrderNumber);
+    setQuantities({});
+    setAppliedPromo(null);
+    setPromoCode("");
+    setOrderNumber(generateOrderNumber());
   };
 
   const handleViewInvoice = (orderId, source) => { setViewingOrderId(orderId); setInvoiceSource(source); setView("invoice"); };
@@ -944,9 +951,9 @@ table{border-collapse:collapse;width:100%;}
         <FadeIn delay={0.5} style={{textAlign:"center"}}>
           <div style={{fontSize:14,color:"rgba(255,255,255,0.7)",lineHeight:1.8,marginBottom:48,marginTop:40}}>
             <div style={{fontWeight:600,color:"#fff",marginBottom:12,fontSize:15,letterSpacing:"0.04em"}}>B2B Wholesale Portal</div>
-            <div style={{marginBottom:16}}>Browse the collection, place orders, and receive deposit invoices — all in one place.</div>
-            <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",lineHeight:1.8}}>
-              <span style={{fontWeight:500,color:"rgba(255,255,255,0.6)"}}>How it works:</span> Create an account, browse Chapter I at wholesale prices, select quantities and generate a 30% deposit invoice. Once confirmed, we ship with the remaining 70% invoiced before dispatch.
+            <div style={{marginBottom:16,maxWidth:420,margin:"0 auto 16px"}}>Browse the collection, place orders, and receive deposit invoices — all in one place.</div>
+            <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",lineHeight:1.8,maxWidth:420,margin:"0 auto"}}>
+              <span style={{fontWeight:500,color:"rgba(255,255,255,0.6)"}}>How it works:</span> Create an account, browse Chapter I at wholesale prices, select quantities and generate a 30% deposit invoice. We ship with the remaining 70% invoiced before dispatch.
             </div>
           </div>
         </FadeIn>
