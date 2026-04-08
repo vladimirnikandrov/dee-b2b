@@ -82,39 +82,44 @@ const SELLER = {
 const SHIPPING_FLAT = 35;
 
 // Email notification helper — calls /api/send-email
-const sendNotification = async (type, data) => {
+const sendNotification = async (type, data, onError) => {
   try {
-    await fetch("/api/send-email", {
+    const res = await fetch("/api/send-email", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type, data }),
     });
+    if (!res.ok && onError) onError("sendNotification:" + type, `HTTP ${res.status}`);
   } catch (err) {
+    if (onError) onError("sendNotification:" + type, err.message || err);
     console.error("Notification error:", err);
   }
 };
 
 // PDF invoice generator — calls /api/generate-invoice, returns { filename, base64 }
-const generateInvoicePDF = async (order, invoiceType = "deposit") => {
+const generateInvoicePDF = async (order, invoiceType = "deposit", onError) => {
   try {
     const res = await fetch("/api/generate-invoice", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ order, type: invoiceType }),
     });
+    if (!res.ok) { if (onError) onError("generateInvoicePDF:" + invoiceType, `HTTP ${res.status}`); return null; }
     const result = await res.json();
     if (result.success) return { filename: result.filename, base64: result.base64 };
+    if (onError) onError("generateInvoicePDF:" + invoiceType, result.error || "Unknown error");
   } catch (err) {
+    if (onError) onError("generateInvoicePDF:" + invoiceType, err.message || err);
     console.error("PDF generation error:", err);
   }
   return null;
 };
 
 // Send email notification with PDF attachment
-const sendNotificationWithPDF = async (emailType, emailData, order, invoiceType) => {
-  const pdf = await generateInvoicePDF(order, invoiceType);
+const sendNotificationWithPDF = async (emailType, emailData, order, invoiceType, onError) => {
+  const pdf = await generateInvoicePDF(order, invoiceType, onError);
   if (pdf) emailData.pdfAttachment = pdf;
-  await sendNotification(emailType, emailData);
+  await sendNotification(emailType, emailData, onError);
 };
 
 // e-conomic API — tokens to be configured by client
@@ -372,6 +377,14 @@ export default function DeeAprilB2B() {
 
   const [noteInputs, setNoteInputs] = useState({});
 
+  // ── Error Log (visible in admin panel) ──
+  const [errorLog, setErrorLog] = useState([]);
+  const logError = useCallback((source, detail) => {
+    const entry = { ts: new Date().toISOString(), source, detail: typeof detail === "string" ? detail : JSON.stringify(detail) };
+    setErrorLog(prev => [entry, ...prev].slice(0, 50));
+    console.error(`[${source}]`, detail);
+  }, []);
+
   // Feature 2: Order Editing
   const [editingOrderId, setEditingOrderId] = useState(null);
   const [editQtys, setEditQtys] = useState({});
@@ -431,6 +444,7 @@ export default function DeeAprilB2B() {
     try {
       const { data, error } = await supabase.from("promo_codes").select("*");
       if (error) {
+        logError("loadPromoCodes", error.message || error);
         setPromoCodes(PROMO_CODES_DEFAULT);
       } else if (data && data.length > 0) {
         setPromoCodes(data);
@@ -447,6 +461,7 @@ export default function DeeAprilB2B() {
     try {
       const { data, error } = await supabase.from("inventory").select("*");
       if (error) {
+        logError("loadInventory", error.message || error);
         setInventory({});
       } else if (data && data.length > 0) {
         const inv = {};
@@ -471,7 +486,7 @@ export default function DeeAprilB2B() {
       await supabase.from("inventory").upsert(records, { onConflict: "sku" });
       showToast("Inventory saved");
     } catch (e) {
-      showToast("Error saving inventory: " + e.message);
+      logError("saveInventory", e.message || e); showToast("Error saving inventory: " + e.message);
     }
   };
 
@@ -517,12 +532,13 @@ export default function DeeAprilB2B() {
 
   const saveProfile = async () => {
     if (!session?.user) return;
-    await supabase.from("buyer_profiles").upsert({
+    const { error } = await supabase.from("buyer_profiles").upsert({
       user_id: session.user.id,
       company: buyer.company, contact: buyer.contact, address: buyer.address,
       city: buyer.city, country: buyer.country, zip: buyer.zip, vat: buyer.vat, email: buyer.email,
       updated_at: new Date().toISOString(),
     }, { onConflict: "user_id" });
+    if (error) logError("saveProfile", error.message || error);
   };
 
   const handleRegister = async () => {
@@ -534,7 +550,7 @@ export default function DeeAprilB2B() {
       password: authForm.password,
       options: { data: { company: authForm.company } }
     });
-    if (error) { setAuthError(error.message); return; }
+    if (error) { logError("handleRegister", error.message); setAuthError(error.message); return; }
     if (data.user) {
       await supabase.from("buyer_profiles").upsert({ user_id: data.user.id, company: authForm.company, email: authForm.email });
       setBuyer(b => ({...b, company: authForm.company, email: authForm.email}));
@@ -655,7 +671,7 @@ export default function DeeAprilB2B() {
 
       console.log("e-conomic sync successful for order", orderData.id);
     } catch (err) {
-      console.error("e-conomic sync error:", err);
+      logError("syncToEconomic", err.message || err);
       // Don't block order flow on e-conomic errors
     }
   };
@@ -688,7 +704,7 @@ export default function DeeAprilB2B() {
       promo_code: appliedPromo?.code || null,
       promo_label: appliedPromo?.label || null,
     });
-    if (error) { showToast("Error: " + error.message); return; }
+    if (error) { logError("handleSubmitOrder", error.message || error); showToast("Error: " + error.message); return; }
 
     // Sync to e-conomic after successful order insertion
     if (ECONOMIC_APP_SECRET) {
@@ -707,8 +723,8 @@ export default function DeeAprilB2B() {
       shipping: shippingAmount, totalWithVat, depositAmount,
       balanceAmount: Math.round((totalBeforeShipping - depositAmount) * 100) / 100,
     };
-    sendNotification("order_placed_buyer", emailData).catch(() => {});
-    sendNotification("order_placed_admin", emailData).catch(() => {});
+    sendNotification("order_placed_buyer", emailData, logError).catch(() => {});
+    sendNotification("order_placed_admin", emailData, logError).catch(() => {});
 
     // Deduct stock from inventory
     for (const line of orderLines) {
@@ -750,7 +766,7 @@ export default function DeeAprilB2B() {
     const dbKey = "status_" + key;
     const newValue = !order.statuses[key];
     const { error } = await supabase.from("orders").update({ [dbKey]: newValue }).eq("id", orderId);
-    if (error) { console.error("Status toggle error:", error); showToast("Failed to update status — " + error.message); return; }
+    if (error) { logError("toggleOrderStatus:" + key, error.message || error); showToast("Failed to update status — " + error.message); return; }
     setAllOrders(prev => prev.map(o => o.id === orderId ? {...o, statuses:{...o.statuses,[key]:newValue}} : o));
 
     // Send buyer notification when status is toggled ON
@@ -776,7 +792,7 @@ export default function DeeAprilB2B() {
           depositAmount: order.depositAmount, depositInvoiceTotal: order.depositAmount + (order.shipping || 0),
           balanceAmount: order.balanceAmount, date: order.date,
         };
-        sendNotificationWithPDF("order_placed_buyer", emailData, pdfOrder, "deposit");
+        sendNotificationWithPDF("order_placed_buyer", emailData, pdfOrder, "deposit", logError);
       } else if (key === "balance_invoiced") {
         const pdfOrder = {
           orderId, ...order.buyer, buyerCompany: order.buyer.company,
@@ -788,16 +804,16 @@ export default function DeeAprilB2B() {
           shipping: order.shipping, totalWithVat: order.totalWithVat,
           depositAmount: order.depositAmount, balanceAmount: order.balanceAmount, date: order.date,
         };
-        sendNotificationWithPDF("balance_invoiced", emailData, pdfOrder, "balance");
+        sendNotificationWithPDF("balance_invoiced", emailData, pdfOrder, "balance", logError);
       } else {
-        sendNotification(STATUS_EMAIL_MAP[key], emailData);
+        sendNotification(STATUS_EMAIL_MAP[key], emailData, logError);
       }
     }
   };
 
   const restoreOrder = async (orderId) => {
     const { error } = await supabase.from("orders").update({ cancelled: false }).eq("id", orderId);
-    if (error) { console.error("Restore error:", error); showToast("Failed to restore — " + error.message); return; }
+    if (error) { logError("restoreOrder", error.message || error); showToast("Failed to restore — " + error.message); return; }
     setAllOrders(prev => prev.map(o => o.id === orderId ? {...o, cancelled:false} : o));
     showToast("Order " + orderId + " restored");
   };
@@ -810,7 +826,7 @@ export default function DeeAprilB2B() {
       danger: true,
       onConfirm: async () => {
         const { error } = await supabase.from("orders").delete().eq("id", orderId);
-        if (error) { console.error("Delete error:", error); showToast("Failed to delete — " + error.message); closeConfirm(); return; }
+        if (error) { logError("deleteOrder", error.message || error); showToast("Failed to delete — " + error.message); closeConfirm(); return; }
         setAllOrders(prev => prev.filter(o => o.id !== orderId));
         closeConfirm();
         showToast("Order " + orderId + " deleted");
@@ -828,7 +844,7 @@ export default function DeeAprilB2B() {
       danger: true,
       onConfirm: async () => {
         const { error } = await supabase.from("orders").update({ cancelled: true }).eq("id", orderId);
-        if (error) { console.error("Cancel error:", error); showToast("Failed to cancel — " + error.message); closeConfirm(); return; }
+        if (error) { logError("cancelOrder", error.message || error); showToast("Failed to cancel — " + error.message); closeConfirm(); return; }
         const order = allOrders.find(o => o.id === orderId);
         setAllOrders(prev => prev.map(o => o.id === orderId ? {...o, cancelled:true} : o));
         closeConfirm();
@@ -841,9 +857,9 @@ export default function DeeAprilB2B() {
             buyerContact: order.buyer.contact, totalWithVat: order.totalWithVat,
           };
           // Always notify buyer
-          sendNotification("order_cancelled_buyer", cancelData);
+          sendNotification("order_cancelled_buyer", cancelData, logError);
           // Notify admin only when buyer cancels (not when admin cancels themselves)
-          if (!fromAdmin) sendNotification("order_cancelled_admin", cancelData);
+          if (!fromAdmin) sendNotification("order_cancelled_admin", cancelData, logError);
         }
       }
     });
@@ -912,6 +928,7 @@ export default function DeeAprilB2B() {
     }).eq("id", orderId);
 
     if (error) {
+      logError("handleUpdateOrder", error.message || error);
       showToast("Error updating order: " + error.message);
       return;
     }
@@ -977,12 +994,12 @@ export default function DeeAprilB2B() {
     };
     try {
       const res = await fetch("/api/generate-invoice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order: data, type: invType, format: "download" }) });
-      if (!res.ok) { showToast("PDF generation failed"); return; }
+      if (!res.ok) { logError("handlePrint", `HTTP ${res.status}`); showToast("PDF generation failed"); return; }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url; a.download = `${data.orderId}-${invType}-invoice.pdf`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-    } catch (e) { showToast("Failed to generate PDF"); }
+    } catch (e) { logError("handlePrint", e.message || e); showToast("Failed to generate PDF"); }
   };
 
   const savePromoCode = async () => {
@@ -1101,7 +1118,7 @@ export default function DeeAprilB2B() {
           <div><label style={labelStyle}>Email</label><input className="da-input" style={{...inputStyle,background: "#0a0a0a"}} disabled value={buyer.email}/></div>
         </div>
         <div style={{display:"flex",gap:10}}>
-          <button className="da-btn" onClick={()=>{saveProfile();showToast("Profile updated");}} style={{background:"#000",color:"#fff",border:"none",padding:"15px 28px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>Save Changes</button>
+          <button className="da-btn" onClick={()=>{saveProfile();showToast("Profile updated");}} style={{background:"#fff",color:"#000",border:"none",padding:"15px 28px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>Save Changes</button>
           <button className="da-btn da-btn-outline" onClick={()=>setView("catalog")} style={{background:"transparent",border: "1px solid #222",padding:"15px 28px",borderRadius:12,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color: "#eee",transition:"all 0.25s"}}>Back</button>
         </div>
       </div></FadeIn>
@@ -1206,7 +1223,7 @@ export default function DeeAprilB2B() {
                 <div style={{fontSize:10,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",color: "#666",marginBottom:10}}>Promo Code</div>
                 <div style={{display:"flex",gap:8}}>
                   <input className="da-input" style={{...inputStyle,flex:1,fontSize:12}} placeholder="Enter code" value={promoCodeInput} onChange={e=>setPromoCodeInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&applyPromoCode()} />
-                  <button onClick={applyPromoCode} style={{background:"#000",color:"#fff",border:"none",padding:"10px 18px",borderRadius:10,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:FONT,whiteSpace:"nowrap",letterSpacing:"0.06em",textTransform:"uppercase"}}>Apply</button>
+                  <button onClick={applyPromoCode} style={{background:"#fff",color:"#000",border:"none",padding:"10px 18px",borderRadius:10,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:FONT,whiteSpace:"nowrap",letterSpacing:"0.06em",textTransform:"uppercase"}}>Apply</button>
                 </div>
                 {appliedPromo && <div style={{marginTop:10,fontSize:11,color:"#2d6a2d",fontWeight:500}}>✓ {appliedPromo.label} pricing applied</div>}
                 {promoError && <div style={{marginTop:10,fontSize:11,color:"#dc2626"}}>{promoError}</div>}
@@ -1315,9 +1332,9 @@ export default function DeeAprilB2B() {
         <div style={{fontSize:17,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:32}}>Admin Panel</div>
 
         <div style={{background: "#000",borderRadius:12,border: "1px solid #2a2a2a",marginBottom:32}}>
-          <button onClick={()=>setAdminExpanded(adminExpanded==="promos"?null:"promos")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:FONT}}>
+          <button onClick={()=>setAdminExpanded(adminExpanded==="promos"?null:"promos")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:FONT,color:"#fff"}}>
             Promo Codes
-            <span style={{fontSize:16}}>{adminExpanded==="promos"?"−":"+"}</span>
+            <span style={{fontSize:16,color:"#888"}}>{adminExpanded==="promos"?"−":"+"}</span>
           </button>
           {adminExpanded==="promos" && (
             <div style={{borderTop: "1px solid #222",padding:"20px"}}>
@@ -1352,16 +1369,16 @@ export default function DeeAprilB2B() {
                     })}
                   </div>
                 </div>
-                <button onClick={savePromoCode} style={{width:"100%",background:"#000",color:"#fff",border:"none",padding:"12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Save Code</button>
+                <button onClick={savePromoCode} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Save Code</button>
               </div>
             </div>
           )}
         </div>
 
         <div style={{background: "#000",borderRadius:12,border: "1px solid #2a2a2a",marginBottom:32}}>
-          <button onClick={()=>setAdminExpanded(adminExpanded==="inventory"?null:"inventory")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:FONT}}>
+          <button onClick={()=>setAdminExpanded(adminExpanded==="inventory"?null:"inventory")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:FONT,color:"#fff"}}>
             Inventory
-            <span style={{fontSize:16}}>{adminExpanded==="inventory"?"−":"+"}</span>
+            <span style={{fontSize:16,color:"#888"}}>{adminExpanded==="inventory"?"−":"+"}</span>
           </button>
           {adminExpanded==="inventory" && (
             <div style={{borderTop: "1px solid #222",padding:"20px"}}>
@@ -1375,10 +1392,36 @@ export default function DeeAprilB2B() {
                   </div>
                 )))}
               </div>
-              <button onClick={saveInventory} style={{width:"100%",background:"#000",color:"#fff",border:"none",padding:"12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Save All</button>
+              <button onClick={saveInventory} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Save All</button>
             </div>
           )}
         </div>
+
+        {/* ── Error Log ── */}
+        {errorLog.length > 0 && (
+        <div style={{background: "#000",borderRadius:12,border: "1px solid #2a2a2a",marginBottom:32}}>
+          <button onClick={()=>setAdminExpanded(adminExpanded==="errors"?null:"errors")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:FONT,color:"#b91c1c"}}>
+            Error Log ({errorLog.length})
+            <span style={{fontSize:16,color:"#888"}}>{adminExpanded==="errors"?"−":"+"}</span>
+          </button>
+          {adminExpanded==="errors" && (
+            <div style={{borderTop: "1px solid #222",padding:"20px"}}>
+              <div style={{display:"flex",gap:8,marginBottom:16}}>
+                <button onClick={()=>{navigator.clipboard.writeText(errorLog.map(e=>`[${e.ts}] ${e.source}: ${e.detail}`).join("\n"));showToast("Copied to clipboard");}} style={{background:"#fff",color:"#000",border:"none",padding:"8px 16px",borderRadius:8,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Copy All</button>
+                <button onClick={()=>setErrorLog([])} style={{background:"transparent",border:"1px solid #444",color:"#888",padding:"8px 16px",borderRadius:8,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Clear</button>
+              </div>
+              <div style={{maxHeight:300,overflowY:"auto",display:"grid",gap:6}}>
+                {errorLog.map((e,i) => (
+                  <div key={i} style={{padding:"10px 12px",background:"#1a1a1a",borderRadius:8,border:"1px solid #222",fontSize:10,fontFamily:"monospace",lineHeight:1.5}}>
+                    <div style={{color:"#666",marginBottom:2}}>{new Date(e.ts).toLocaleTimeString("en-GB")} · <span style={{color:"#b91c1c",fontWeight:600}}>{e.source}</span></div>
+                    <div style={{color:"#ccc",wordBreak:"break-all"}}>{e.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        )}
 
         {/* ── Company Cards ── */}
         {(() => {
@@ -1393,13 +1436,13 @@ export default function DeeAprilB2B() {
             <div style={{marginBottom:32}}>
               <div style={{fontSize:15,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:16}}>Companies ({companies.length})</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
-                <button onClick={()=>setAdminCompanyFilter(null)} style={{padding:"16px",borderRadius:10,border:adminCompanyFilter===null?"2px solid #000":"1px solid #e0e0e0",background:adminCompanyFilter===null?"#000":"#fff",color:adminCompanyFilter===null?"#fff":"#333",cursor:"pointer",fontFamily:FONT,textAlign:"left",transition:"all 0.2s"}}>
+                <button onClick={()=>setAdminCompanyFilter(null)} style={{padding:"16px",borderRadius:10,border:adminCompanyFilter===null?"2px solid #fff":"1px solid #333",background:adminCompanyFilter===null?"#000":"transparent",color:adminCompanyFilter===null?"#fff":"#ccc",cursor:"pointer",fontFamily:FONT,textAlign:"left",transition:"all 0.2s"}}>
                   <div style={{fontSize:11,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase"}}>All Companies</div>
                   <div style={{fontSize:20,fontWeight:600,marginTop:8}}>{allOrders.length}</div>
                   <div style={{fontSize:9,color:adminCompanyFilter===null?"rgba(255,255,255,0.6)":"#999",marginTop:2,letterSpacing:"0.06em",textTransform:"uppercase"}}>{formatEUR(allOrders.reduce((s,o)=>s+(o.totalWithVat||0),0))} total</div>
                 </button>
                 {companyStats.map(c => (
-                  <button key={c.name} onClick={()=>setAdminCompanyFilter(c.name)} style={{padding:"16px",borderRadius:10,border:adminCompanyFilter===c.name?"2px solid #000":"1px solid #e0e0e0",background:adminCompanyFilter===c.name?"#000":"#fff",color:adminCompanyFilter===c.name?"#fff":"#333",cursor:"pointer",fontFamily:FONT,textAlign:"left",transition:"all 0.2s"}}>
+                  <button key={c.name} onClick={()=>setAdminCompanyFilter(c.name)} style={{padding:"16px",borderRadius:10,border:adminCompanyFilter===c.name?"2px solid #fff":"1px solid #333",background:adminCompanyFilter===c.name?"#000":"transparent",color:adminCompanyFilter===c.name?"#fff":"#ccc",cursor:"pointer",fontFamily:FONT,textAlign:"left",transition:"all 0.2s"}}>
                     <div style={{fontSize:11,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
                     <div style={{fontSize:20,fontWeight:600,marginTop:8}}>{c.count}</div>
                     <div style={{fontSize:9,color:adminCompanyFilter===c.name?"rgba(255,255,255,0.6)":"#999",marginTop:2,letterSpacing:"0.06em",textTransform:"uppercase"}}>{c.active} active · {formatEUR(c.total)}</div>
@@ -1432,7 +1475,7 @@ export default function DeeAprilB2B() {
         </div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:24}}>
           {statusFilters.map(f => (
-            <button key={f.key} onClick={()=>setAdminStatusFilter(f.key)} style={{padding:"7px 14px",borderRadius:8,fontSize:10,fontWeight:adminStatusFilter===f.key?600:400,border:adminStatusFilter===f.key?"2px solid #000":"1px solid #e0e0e0",background:adminStatusFilter===f.key?"#000":"transparent",color:adminStatusFilter===f.key?"#fff":"#666",cursor:"pointer",fontFamily:FONT,textTransform:"uppercase",letterSpacing:"0.08em",transition:"all 0.2s"}}>{f.label}</button>
+            <button key={f.key} onClick={()=>setAdminStatusFilter(f.key)} style={{padding:"7px 14px",borderRadius:8,fontSize:10,fontWeight:adminStatusFilter===f.key?600:400,border:adminStatusFilter===f.key?"2px solid #fff":"1px solid #444",background:adminStatusFilter===f.key?"#000":"transparent",color:adminStatusFilter===f.key?"#fff":"#999",cursor:"pointer",fontFamily:FONT,textTransform:"uppercase",letterSpacing:"0.08em",transition:"all 0.2s"}}>{f.label}</button>
           ))}
         </div>
         {filtered.length === 0 ? (
@@ -1495,7 +1538,7 @@ export default function DeeAprilB2B() {
                   <div style={{fontSize:10,color: "#666",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Status</div>
                   <div className="da-status-bar" style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                     {ORDER_STATUSES.map(s => (
-                      <button key={s.key} onClick={()=>toggleOrderStatus(order.id,s.key)} className="da-status-step" style={{padding:"8px 14px",borderRadius:8,fontSize:10,fontWeight:order.statuses[s.key]?600:400,border:`2px solid ${order.statuses[s.key]?"#000":"#e0e0e0"}`,background:order.statuses[s.key]?"#000":"transparent",color:order.statuses[s.key]?"#fff":"#666",cursor:"pointer",fontFamily:FONT,textTransform:"uppercase",letterSpacing:"0.08em",transition:"all 0.2s"}}>{s.label}</button>
+                      <button key={s.key} onClick={()=>toggleOrderStatus(order.id,s.key)} className="da-status-step" style={{padding:"8px 14px",borderRadius:8,fontSize:10,fontWeight:order.statuses[s.key]?600:400,border:`2px solid ${order.statuses[s.key]?"#fff":"#444"}`,background:order.statuses[s.key]?"#000":"transparent",color:order.statuses[s.key]?"#fff":"#999",cursor:"pointer",fontFamily:FONT,textTransform:"uppercase",letterSpacing:"0.08em",transition:"all 0.2s"}}>{s.label}</button>
                     ))}
                   </div>
                 </div>
@@ -1555,8 +1598,8 @@ export default function DeeAprilB2B() {
             {/* Invoice type toggle — only show if balance is available */}
             {cur && cur.statuses?.balance_invoiced && (
               <div style={{display:"flex",gap:8,marginBottom:20}}>
-                <button onClick={()=>setInvoiceViewType("deposit")} style={{padding:"8px 16px",borderRadius:8,fontSize:10,fontWeight:invoiceViewType==="deposit"?600:400,border:invoiceViewType==="deposit"?"2px solid #000":"1px solid #e0e0e0",background:invoiceViewType==="deposit"?"#000":"transparent",color:invoiceViewType==="deposit"?"#fff":"#666",cursor:"pointer",fontFamily:FONT,textTransform:"uppercase",letterSpacing:"0.08em",transition:"all 0.2s"}}>30% Deposit</button>
-                <button onClick={()=>setInvoiceViewType("balance")} style={{padding:"8px 16px",borderRadius:8,fontSize:10,fontWeight:invoiceViewType==="balance"?600:400,border:invoiceViewType==="balance"?"2px solid #000":"1px solid #e0e0e0",background:invoiceViewType==="balance"?"#000":"transparent",color:invoiceViewType==="balance"?"#fff":"#666",cursor:"pointer",fontFamily:FONT,textTransform:"uppercase",letterSpacing:"0.08em",transition:"all 0.2s"}}>70% Balance</button>
+                <button onClick={()=>setInvoiceViewType("deposit")} style={{padding:"8px 16px",borderRadius:8,fontSize:10,fontWeight:invoiceViewType==="deposit"?600:400,border:invoiceViewType==="deposit"?"2px solid #fff":"1px solid #444",background:invoiceViewType==="deposit"?"#000":"transparent",color:invoiceViewType==="deposit"?"#fff":"#999",cursor:"pointer",fontFamily:FONT,textTransform:"uppercase",letterSpacing:"0.08em",transition:"all 0.2s"}}>30% Deposit</button>
+                <button onClick={()=>setInvoiceViewType("balance")} style={{padding:"8px 16px",borderRadius:8,fontSize:10,fontWeight:invoiceViewType==="balance"?600:400,border:invoiceViewType==="balance"?"2px solid #fff":"1px solid #444",background:invoiceViewType==="balance"?"#000":"transparent",color:invoiceViewType==="balance"?"#fff":"#999",cursor:"pointer",fontFamily:FONT,textTransform:"uppercase",letterSpacing:"0.08em",transition:"all 0.2s"}}>70% Balance</button>
               </div>
             )}
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:28,flexWrap:"wrap",gap:12}}>
