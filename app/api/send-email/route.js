@@ -67,8 +67,9 @@ function ctaButton(text, url = PORTAL_URL) {
 </table>`;
 }
 
-function statusBadge(label, color = "#000") {
-  return `<div style="text-align:center;"><span style="display:inline-block;background:${color};color:#fff;padding:4px 12px;border-radius:6px;font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;">${label}</span></div>`;
+function statusBadge(label, color = "#fff") {
+  const textColor = (color === "#fff" || color === "#ffffff") ? "#000" : "#fff";
+  return `<div style="text-align:center;"><span style="display:inline-block;background:${color};color:${textColor};padding:4px 12px;border-radius:6px;font-size:10px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;">${label}</span></div>`;
 }
 
 function orderSummaryBlock(order) {

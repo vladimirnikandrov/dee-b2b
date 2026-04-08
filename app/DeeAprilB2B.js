@@ -227,9 +227,9 @@ function BottleSVG({ size, uniqueId }) {
 
 function QtyInput({ value, onChange, max }) {
   const atMax = max !== undefined && max !== null && value >= max;
-  const s = {width:32,height:32,border:"none",background:"transparent",cursor:"pointer",fontSize:14,color:"#666",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:FONT,padding:0};
+  const s = {width:32,height:32,border:"none",background:"transparent",cursor:"pointer",fontSize:14,color:"#aaa",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:FONT,padding:0};
   const clamp = (v) => { let n = Math.max(0, v); if (max !== undefined && max !== null) n = Math.min(n, max); return n; };
-  return (<div style={{display:"inline-flex",alignItems:"center",borderRadius:8,border:`1px solid ${atMax?"#eab308":"#e0e0e0"}`,overflow:"hidden",background: "#000"}}><button className="da-qty-btn" onClick={()=>onChange(Math.max(0,value-1))} style={s}>−</button><input type="number" min="0" max={max} value={value} onChange={(e)=>onChange(clamp(parseInt(e.target.value)||0))} style={{width:36,height:32,border:"none",borderLeft: "1px solid #333",borderRight: "1px solid #333",textAlign:"center",fontSize:12,fontWeight:500,fontFamily:FONT,outline:"none",background:"transparent",padding:0}}/><button className="da-qty-btn" onClick={()=>onChange(clamp(value+1))} style={{...s,opacity:atMax?0.3:1,cursor:atMax?"default":"pointer"}}>+</button></div>);
+  return (<div style={{display:"inline-flex",alignItems:"center",borderRadius:8,border:`1px solid ${atMax?"#eab308":"#444"}`,overflow:"hidden",background: "#000"}}><button className="da-qty-btn" onClick={()=>onChange(Math.max(0,value-1))} style={s}>−</button><input type="number" min="0" max={max} value={value} onChange={(e)=>onChange(clamp(parseInt(e.target.value)||0))} style={{width:36,height:32,border:"none",borderLeft: "1px solid #333",borderRight: "1px solid #333",textAlign:"center",fontSize:12,fontWeight:500,fontFamily:FONT,outline:"none",background:"transparent",padding:0,color:"#fff"}}/><button className="da-qty-btn" onClick={()=>onChange(clamp(value+1))} style={{...s,opacity:atMax?0.3:1,cursor:atMax?"default":"pointer"}}>+</button></div>);
 }
 
 function FadeIn({ children, delay = 0, style = {} }) {
@@ -264,7 +264,7 @@ function ConfirmModal({ open, title, message, confirmLabel, cancelLabel, onConfi
         <div style={{fontSize:13,color: "#888",lineHeight:1.7,marginBottom:28,fontFamily:FONT}}>{message}</div>
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
           <button onClick={onCancel} style={{background:"transparent",border: "1px solid #2a2a2a",padding:"10px 20px",borderRadius:10,fontSize:11,letterSpacing:"0.08em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color: "#888"}}>{cancelLabel||"Cancel"}</button>
-          <button onClick={onConfirm} style={{background:danger?"#dc2626":"#000",color:"#fff",border:"none",padding:"10px 24px",borderRadius:10,fontSize:11,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>{confirmLabel||"Confirm"}</button>
+          <button onClick={onConfirm} style={{background:danger?"#b91c1c":"#000",color:"#fff",border:"none",padding:"10px 24px",borderRadius:10,fontSize:11,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>{confirmLabel||"Confirm"}</button>
         </div>
       </div>
     </div>
@@ -699,7 +699,7 @@ export default function DeeAprilB2B() {
       });
     }
 
-    // Email notifications: buyer confirmation + admin alert
+    // Email notifications: buyer confirmation + admin alert (fire-and-forget, non-blocking)
     const emailData = {
       orderId: orderNumber, buyerCompany: buyer.company, buyerContact: buyer.contact,
       buyerEmail: buyer.email, buyerCountry: buyer.country, buyerCity: buyer.city, buyerVat: buyer.vat,
@@ -707,8 +707,8 @@ export default function DeeAprilB2B() {
       shipping: shippingAmount, totalWithVat, depositAmount,
       balanceAmount: Math.round((totalBeforeShipping - depositAmount) * 100) / 100,
     };
-    sendNotification("order_placed_buyer", emailData);
-    sendNotification("order_placed_admin", emailData);
+    sendNotification("order_placed_buyer", emailData).catch(() => {});
+    sendNotification("order_placed_admin", emailData).catch(() => {});
 
     // Deduct stock from inventory
     for (const line of orderLines) {
@@ -961,17 +961,28 @@ export default function DeeAprilB2B() {
     showToast("CSV exported");
   };
 
-  const handlePrint = () => {
-    const c = invoiceRef.current; if (!c) return;
-    const w = window.open("","_blank","width=800,height=1100");
-    w.document.write(`<!DOCTYPE html><html><head><title>Invoice — Dee April</title><style>
-*{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#000;padding:28px 32px;font-size:11px;line-height:1.5;}
-table{border-collapse:collapse;width:100%;}
-@page{margin:14mm 16mm;size:A4;}
-@media print{body{padding:0;font-size:10.5px;line-height:1.4;}}
-</style></head><body>${c.innerHTML}</body></html>`);
-    w.document.close(); setTimeout(() => w.print(), 400);
+  const handlePrint = async () => {
+    const inv = allOrders.find(o => o.id === viewingOrderId) || {buyer,totalWSP,vatInfo,vatAmount,shipping:shippingAmount,totalWithVat,depositAmount,balanceAmount:totalWithVat-depositAmount,lines:orderLines,cancelled:false};
+    const invType = invoiceViewType || "deposit";
+    const data = {
+      orderId: viewingOrderId || orderNumber,
+      buyerCompany: inv.buyer?.company, buyerContact: inv.buyer?.contact,
+      buyerAddress: inv.buyer?.address, buyerCity: inv.buyer?.city,
+      buyerCountry: inv.buyer?.country, buyerZip: inv.buyer?.zip,
+      buyerVat: inv.buyer?.vat, buyerEmail: inv.buyer?.email,
+      lines: inv.lines, totalWSP: inv.totalWSP, vatAmount: inv.vatAmount,
+      vatLabel: inv.vatInfo?.label, vatNote: inv.vatInfo?.note,
+      shipping: inv.shipping, totalWithVat: inv.totalWithVat,
+      depositAmount: inv.depositAmount, balanceAmount: inv.balanceAmount || (inv.totalWithVat - inv.depositAmount),
+    };
+    try {
+      const res = await fetch("/api/generate-invoice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order: data, type: invType, format: "download" }) });
+      if (!res.ok) { showToast("PDF generation failed"); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `${data.orderId}-${invType}-invoice.pdf`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    } catch (e) { showToast("Failed to generate PDF"); }
   };
 
   const savePromoCode = async () => {
@@ -1041,7 +1052,7 @@ table{border-collapse:collapse;width:100%;}
   );
 
   if (view === "landing") return (
-    <div style={{...base,background:"linear-gradient(180deg,rgba(0,0,0,0.75) 0%,rgba(0,0,0,0.6) 50%,rgba(0,0,0,0.8) 100%)",backgroundImage:`linear-gradient(180deg,rgba(0,0,0,0.75) 0%,rgba(0,0,0,0.6) 50%,rgba(0,0,0,0.8) 100%), url("https://gsojazybzodouvdmqkvg.supabase.co/storage/v1/object/sign/DA%20Assets/cover.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV80ZTU5ZWYwMS1lNDhiLTQ2ZTAtYjVmOS0yMTU4NDRhM2EzZGEiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJEQSBBc3NldHMvY292ZXIucG5nIiwiaWF0IjoxNzc0NTcxNzg4LCJleHAiOjE4MDYxMDc3ODh9.ErG-m6CDQLcINabcW3oOIle3uPWr6JFqWeHsv6wVNxw")`,backgroundSize:"cover",backgroundPosition:"center top",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",padding:"40px 20px"}}>
+    <div style={{...base,background:"linear-gradient(180deg,rgba(0,0,0,0.45) 0%,rgba(0,0,0,0.3) 50%,rgba(0,0,0,0.65) 100%)",backgroundImage:`linear-gradient(180deg,rgba(0,0,0,0.45) 0%,rgba(0,0,0,0.3) 50%,rgba(0,0,0,0.65) 100%), url("https://gsojazybzodouvdmqkvg.supabase.co/storage/v1/object/sign/DA%20Assets/cover.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV80ZTU5ZWYwMS1lNDhiLTQ2ZTAtYjVmOS0yMTU4NDRhM2EzZGEiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJEQSBBc3NldHMvY292ZXIucG5nIiwiaWF0IjoxNzc0NTcxNzg4LCJleHAiOjE4MDYxMDc3ODh9.ErG-m6CDQLcINabcW3oOIle3uPWr6JFqWeHsv6wVNxw")`,backgroundSize:"cover",backgroundPosition:"center top",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",padding:"40px 20px"}}>
       <div style={{textAlign:"center",maxWidth:520,width:"100%"}}>
         <div style={{animation:"scaleIn 0.8s cubic-bezier(0.23,1,0.32,1) 0s both",display:"flex",justifyContent:"center"}}>
           <Logo color="#fff" style={{ height: 36 }} />
@@ -1056,7 +1067,7 @@ table{border-collapse:collapse;width:100%;}
           </div>
         </FadeIn>
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          <button className="da-btn" onClick={()=>setView("register")} style={{width:"100%",background: "#000",color: "#fff",border:"none",padding:"16px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,animation:"slideUp 0.6s cubic-bezier(0.23,1,0.32,1) 0.2s both"}}>Create Account</button>
+          <button className="da-btn" onClick={()=>setView("register")} style={{width:"100%",background: "#fff",color: "#000",border:"none",padding:"16px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,animation:"slideUp 0.6s cubic-bezier(0.23,1,0.32,1) 0.2s both"}}>Create Account</button>
           <button className="da-btn" onClick={()=>setView("login")} style={{width:"100%",background:"transparent",color:"#fff",border:"1px solid rgba(255,255,255,0.3)",padding:"16px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,animation:"slideUp 0.6s cubic-bezier(0.23,1,0.32,1) 0.3s both"}}>Sign In</button>
           <button className="da-btn" onClick={()=>setView("adminlogin")} style={{width:"100%",background:"transparent",color:"rgba(255,255,255,0.5)",border:"none",padding:"16px",borderRadius:12,fontSize:10,letterSpacing:"0.15em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,animation:"slideUp 0.6s cubic-bezier(0.23,1,0.32,1) 0.4s both"}}>Admin</button>
         </div>
@@ -1190,7 +1201,7 @@ table{border-collapse:collapse;width:100%;}
                 </div>
                 {buyer.vat && <div style={{fontSize:10,color: "#666",lineHeight:1.5,marginTop:-8}}>EU buyers: provide valid VAT number for reverse charge (0% VAT)</div>}
               </div>
-              {buyer.country && <div style={{padding:"12px 16px",background: "#111",borderRadius:10,border: "1px solid #222",fontSize:11,lineHeight:1.6,marginTop:20}}><span style={{fontWeight:600,color:"#000"}}>{vatInfo.label}</span><span style={{color:"#888",marginLeft:8}}>{vatInfo.note}</span></div>}
+              {buyer.country && <div style={{padding:"12px 16px",background: "#111",borderRadius:10,border: "1px solid #222",fontSize:11,lineHeight:1.6,marginTop:20}}><span style={{fontWeight:600,color:"#fff"}}>{vatInfo.label}</span><span style={{color:"#888",marginLeft:8}}>{vatInfo.note}</span></div>}
               <div style={{marginTop:28,padding:"20px",background: "#111",borderRadius:12,border: "1px solid #222"}}>
                 <div style={{fontSize:10,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",color: "#666",marginBottom:10}}>Promo Code</div>
                 <div style={{display:"flex",gap:8}}>
@@ -1216,7 +1227,7 @@ table{border-collapse:collapse;width:100%;}
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><div><div style={{fontSize:10,textTransform:"uppercase",letterSpacing:"0.1em",color: "#666"}}>Deposit Invoice</div><div style={{fontSize:10,color: "#999",marginTop:2}}>30% advance + shipping</div></div><span style={{fontSize:20,fontWeight:600}}>{formatEUR(depositInvoiceTotal)}</span></div>
                 </div>
                 <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:20}}>
-                  <button className="da-btn" onClick={()=>{if(canSubmit){askConfirm({title:"Confirm Order",message:`Place order ${orderNumber} for ${formatEUR(totalWithVat)}? A 30% deposit invoice of ${formatEUR(depositInvoiceTotal)} will be generated.`,confirmLabel:"Place Order",danger:false,onConfirm:async ()=>{closeConfirm();await handleSubmitOrder();}});}}} disabled={!canSubmit} style={{width:"100%",background:canSubmit?"#000":"#e0e0e0",color:canSubmit?"#fff":"#999",border:"none",padding:"14px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:canSubmit?"pointer":"default",fontFamily:FONT}}>Place Order</button>
+                  <button className="da-btn" onClick={()=>{if(canSubmit){askConfirm({title:"Confirm Order",message:`Place order ${orderNumber} for ${formatEUR(totalWithVat)}? A 30% deposit invoice of ${formatEUR(depositInvoiceTotal)} will be generated.`,confirmLabel:"Place Order",danger:false,onConfirm:async ()=>{closeConfirm();await handleSubmitOrder();}});}}} disabled={!canSubmit} style={{width:"100%",background:canSubmit?"#fff":"#333",color:canSubmit?"#000":"#666",border:"none",padding:"14px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:canSubmit?"pointer":"default",fontFamily:FONT}}>Place Order</button>
                   <button className="da-btn da-btn-outline" onClick={()=>setView("catalog")} style={{width:"100%",background:"transparent",border: "1px solid #222",padding:"12px",borderRadius:12,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color: "#eee",transition:"all 0.25s"}}>Back to Catalog</button>
                 </div>
               </div>
@@ -1283,7 +1294,7 @@ table{border-collapse:collapse;width:100%;}
                     <>
                       {!order.cancelled && !order.statuses.balance_paid && <button className="da-btn da-btn-outline" onClick={()=>{setEditingOrderId(order.id);setEditQtys(Object.fromEntries(order.lines.map(l=>[l.sku,l.qty])));}} style={{background:"transparent",border: "1px solid #222",padding:"9px 20px",borderRadius:10,fontSize:10,color: "#eee",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Edit</button>}
                       <button className="da-btn da-btn-outline" onClick={()=>repeatOrder(order)} style={{background:"transparent",border: "1px solid #222",padding:"9px 20px",borderRadius:10,fontSize:10,color: "#eee",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Repeat Order</button>
-                      {canClientCancel(order) && <button className="da-btn da-btn-outline" onClick={()=>cancelOrder(order.id,false)} style={{background:"transparent",border:"1px solid #dc2626",padding:"9px 20px",borderRadius:10,fontSize:10,color:"#dc2626",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Cancel</button>}
+                      {canClientCancel(order) && <button className="da-btn da-btn-outline" onClick={()=>cancelOrder(order.id,false)} style={{background:"transparent",border:"1px solid #b91c1c",padding:"9px 20px",borderRadius:10,fontSize:10,color:"#b91c1c",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Cancel</button>}
                     </>
                   )}
                 </div>
@@ -1317,7 +1328,7 @@ table{border-collapse:collapse;width:100%;}
                       <div style={{fontWeight:600}}>{p.code}</div>
                       <div style={{color: "#888",fontSize:10,marginTop:2}}>{p.label} — {p.prices["100 ML"]}/{p.prices["50 ML"]}/{p.prices["20 ML"]}/{p.prices["2 ML"]}</div>
                     </div>
-                    <button onClick={()=>deletePromoCode(p.code)} style={{background:"#dc2626",color:"#fff",border:"none",padding:"6px 12px",borderRadius:6,fontSize:10,cursor:"pointer",fontFamily:FONT,fontWeight:500}}>Delete</button>
+                    <button onClick={()=>deletePromoCode(p.code)} style={{background:"#b91c1c",color:"#fff",border:"none",padding:"6px 12px",borderRadius:6,fontSize:10,cursor:"pointer",fontFamily:FONT,fontWeight:500}}>Delete</button>
                   </div>
                 ))}
               </div>
@@ -1494,9 +1505,9 @@ table{border-collapse:collapse;width:100%;}
                   {editingOrderId === order.id ? null : (
                     <>
                       {!order.cancelled && !order.statuses.balance_paid && <button className="da-btn da-btn-outline" onClick={()=>{setEditingOrderId(order.id);setEditQtys(Object.fromEntries(order.lines.map(l=>[l.sku,l.qty])));}} style={{background:"transparent",border: "1px solid #222",padding:"9px 18px",borderRadius:10,fontSize:10,color: "#eee",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Edit</button>}
-                      {!order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>cancelOrder(order.id,true)} style={{background:"transparent",border:"1px solid #dc2626",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#dc2626",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Cancel</button>}
-                      {order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>restoreOrder(order.id)} style={{background:"transparent",border:"1px solid #2563eb",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#2563eb",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Restore</button>}
-                      {order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>deleteOrder(order.id)} style={{background:"transparent",border:"1px solid #dc2626",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#dc2626",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Delete</button>}
+                      {!order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>cancelOrder(order.id,true)} style={{background:"transparent",border:"1px solid #b91c1c",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#b91c1c",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Cancel</button>}
+                      {order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>restoreOrder(order.id)} style={{background:"transparent",border:"1px solid #fff",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#fff",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Restore</button>}
+                      {order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>deleteOrder(order.id)} style={{background:"transparent",border:"1px solid #b91c1c",padding:"9px 18px",borderRadius:10,fontSize:10,color:"#b91c1c",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Delete</button>}
                     </>
                   )}
                 </div>
@@ -1534,9 +1545,9 @@ table{border-collapse:collapse;width:100%;}
         <div className="da-header-pad" style={{padding:"20px 48px",background: "#000",borderBottom: "1px solid #333",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
           <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
             <button className="da-btn da-btn-outline" onClick={handleBack} style={{background:"transparent",border: "1px solid #222",padding:"9px 24px",borderRadius:10,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color: "#eee",transition:"all 0.25s"}}>{invoiceSource?"← Back":"New Order"}</button>
-            {!invoiceSource&&<button className="da-btn da-btn-outline" onClick={()=>setView("myorders")} style={{background:"transparent",border: "1px solid #222",padding:"9px 24px",borderRadius:10,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color: "#eee",transition:"all 0.25s"}}>My Orders</button>}
+            {<button className="da-btn da-btn-outline" onClick={()=>setView("myorders")} style={{background:"transparent",border: "1px solid #222",padding:"9px 24px",borderRadius:10,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color: "#eee",transition:"all 0.25s"}}>My Orders</button>}
           </div>
-          <button className="da-btn" onClick={handlePrint} style={{background:"#000",color:"#fff",border:"none",padding:"11px 28px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>Print / Save PDF</button>
+          <button className="da-btn" onClick={handlePrint} style={{background:"#000",color:"#fff",border:"none",padding:"11px 28px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>Save PDF</button>
         </div>
         <FadeIn delay={0.1}><div className="da-invoice-pad" style={{maxWidth:760,margin:"32px auto",background: "#000",borderRadius:20,padding:"56px 52px",boxShadow:"0 4px 24px rgba(0,0,0,0.06)",position:"relative"}}>
           {inv.cancelled && <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%) rotate(-30deg)",fontSize:60,fontWeight:900,color:"rgba(220,38,38,0.08)",letterSpacing:"0.1em",pointerEvents:"none",whiteSpace:"nowrap"}}>CANCELLED</div>}
