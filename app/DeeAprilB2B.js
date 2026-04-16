@@ -423,14 +423,27 @@ export default function DeeAprilB2B() {
   const depositInvoiceTotal = depositAmount + shippingAmount;
 
   useEffect(() => {
+    // Check URL params for deep linking from emails
+    const params = new URLSearchParams(window.location.search);
+    const deepOrder = params.get("order");
+
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
       setLoading(false);
-      if (s) { loadProfile(s.user.id); loadOrders(); }
+      if (s) {
+        loadProfile(s.user.id);
+        loadOrders();
+        if (deepOrder) { setViewingOrderId(deepOrder); setInvoiceSource("myorders"); setView("invoice"); }
+        else if (view === "landing" || view === "login") setView("catalog");
+      }
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s);
-      if (s) { loadProfile(s.user.id); loadOrders(); }
+      if (s) {
+        loadProfile(s.user.id);
+        loadOrders();
+        if (view === "landing" || view === "login") setView("catalog");
+      }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -1179,11 +1192,11 @@ export default function DeeAprilB2B() {
         })}
       </div>
       {totalItems > 0 && (
-        <div className="da-floating-bar" style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#000",color:"#fff",borderRadius:20,padding:"16px 20px 16px 28px",display:"flex",alignItems:"center",gap:24,boxShadow:"0 8px 40px rgba(0,0,0,0.25)",animation:"slideUpCenter 0.4s cubic-bezier(0.23,1,0.32,1)",zIndex:30,maxWidth:520}}>
+        <div className="da-floating-bar" style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#fff",color:"#000",borderRadius:20,padding:"16px 20px 16px 28px",display:"flex",alignItems:"center",gap:24,boxShadow:"0 8px 40px rgba(0,0,0,0.5)",animation:"slideUpCenter 0.4s cubic-bezier(0.23,1,0.32,1)",zIndex:30,maxWidth:520}}>
           <div style={{display:"flex",alignItems:"baseline",gap:10,whiteSpace:"nowrap"}}>
-            <span style={{fontSize:12,opacity:0.6}}>{totalItems} item{totalItems!==1?"s":""}</span>
+            <span style={{fontSize:12,opacity:0.5}}>{totalItems} item{totalItems!==1?"s":""}</span>
             <span style={{fontSize:18,fontWeight:600,letterSpacing:"0.02em"}}>{formatEUR(totalWSP)}</span>
-            <span style={{fontSize:10,opacity:0.4}}>excl. VAT</span>
+            <span style={{fontSize:10,opacity:0.35}}>excl. VAT</span>
           </div>
           <button className="da-btn" onClick={()=>setView("checkout")} style={{background: "#000",color: "#fff",border:"none",padding:"11px 28px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.14em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,whiteSpace:"nowrap"}}>Proceed</button>
         </div>

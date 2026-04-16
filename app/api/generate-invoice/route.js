@@ -68,7 +68,7 @@ async function generateInvoicePDF(order, type = "deposit") {
   // ── Header: Logo image ──
   const logoB64 = await getLogoBase64();
   if (logoB64) {
-    try { doc.addImage("data:image/png;base64," + logoB64, "PNG", margin, y - 4, 45, 0); } catch (e) { /* fallback below */ }
+    try { doc.addImage("data:image/png;base64," + logoB64, "PNG", margin, y - 2, 32, 8); } catch (e) { /* fallback below */ }
   }
   // Fallback text if image fails
   if (!logoB64) {
@@ -225,7 +225,8 @@ async function generateInvoicePDF(order, type = "deposit") {
     doc.setTextColor(...(bold ? white : lightGray));
     doc.text(label, totX, y);
     doc.setTextColor(...white);
-    doc.text(formatEUR(value), totValX, y, { align: "right" });
+    const displayVal = typeof value === "string" ? value : formatEUR(value);
+    doc.text(displayVal, totValX, y, { align: "right" });
     if (!big) {
       y += 1.5;
       doc.setDrawColor(...darkBorder);

@@ -38,7 +38,7 @@ ${preheader ? `<span style="display:none;font-size:1px;color:#000000;line-height
 
 <!-- Logo -->
 <tr><td align="center" style="padding-bottom:40px;">
-<img src="${LOGO_WHITE}" alt="Dee April Parfums" width="180" style="display:block;margin:0 auto;height:auto;"/>
+<img src="${LOGO_WHITE}" alt="Dee April Parfums" width="100" style="display:block;margin:0 auto;height:auto;"/>
 </td></tr>
 
 <!-- Content Card -->
@@ -138,7 +138,7 @@ const TEMPLATES = {
           <p style="margin:0;font-size:12px;color:#ccc;">Your 30% deposit invoice of <strong>${formatEUR(data.depositAmount || 0)}</strong> is attached to this email as a PDF. You can also view it anytime in your account.</p>
         </td></tr>
       </table>
-      ${ctaButton("View Order")}
+      ${ctaButton("View Order", `${PORTAL_URL}?order=${data.orderId}`)}
     `, `Order ${data.orderId} confirmed — ${formatEUR(data.totalWithVat)} total`)
   }),
 
@@ -185,7 +185,7 @@ const TEMPLATES = {
       </table>
       ${divider()}
       <p style="font-size:12px;color:#ccc;margin:0;text-align:center;">Your order is now being prepared. We'll notify you when it's packed and ready.</p>
-      ${ctaButton("Track Order")}
+      ${ctaButton("Track Order", `${PORTAL_URL}?order=${data.orderId}`)}
     `, `Deposit received for order ${data.orderId}`)
   }),
 
@@ -204,7 +204,7 @@ const TEMPLATES = {
           <p style="margin:0;font-size:12px;color:#ccc;">The remaining 70% balance invoice of <strong>${formatEUR(data.balanceAmount || 0)}</strong> will be sent shortly. Once paid, we'll ship your order.</p>
         </td></tr>
       </table>
-      ${ctaButton("View Order")}
+      ${ctaButton("View Order", `${PORTAL_URL}?order=${data.orderId}`)}
     `, `Order ${data.orderId} is packed`)
   }),
 
@@ -223,7 +223,7 @@ const TEMPLATES = {
       </table>
       ${divider()}
       <p style="font-size:12px;color:#ccc;margin:0;text-align:center;">Your 70% balance invoice is attached to this email as a PDF. Please complete the payment to proceed with shipping — bank details are in the invoice.</p>
-      ${ctaButton("View Invoice")}
+      ${ctaButton("View Invoice", `${PORTAL_URL}?order=${data.orderId}`)}
     `, `Balance of ${formatEUR(data.balanceAmount || 0)} due for order ${data.orderId}`)
   }),
 
@@ -242,7 +242,7 @@ const TEMPLATES = {
       </table>
       ${divider()}
       <p style="font-size:12px;color:#ccc;margin:0;text-align:center;">Your order will be shipped shortly. You'll receive a notification with tracking details.</p>
-      ${ctaButton("Track Order")}
+      ${ctaButton("Track Order", `${PORTAL_URL}?order=${data.orderId}`)}
     `, `Order ${data.orderId} fully paid`)
   }),
 
@@ -261,7 +261,7 @@ const TEMPLATES = {
       </table>
       ${divider()}
       <p style="font-size:12px;color:#ccc;margin:0;text-align:center;">Please confirm receipt once your order arrives.</p>
-      ${ctaButton("Confirm Receipt")}
+      ${ctaButton("Confirm Receipt", `${PORTAL_URL}?order=${data.orderId}`)}
     `, `Order ${data.orderId} has been shipped`)
   }),
 
