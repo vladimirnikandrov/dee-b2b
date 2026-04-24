@@ -1673,7 +1673,7 @@ export default function DeeAprilB2B() {
             <div style={{marginTop:20,paddingTop:16,borderTop: "1px solid #333",fontSize:10,color: "#888",lineHeight:1.7}}>
               <div style={{fontSize:9,textTransform:"uppercase",letterSpacing:"0.14em",color: "#999",marginBottom:8}}>Payment Details</div>
               <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:"3px 14px"}}><span style={{color: "#666"}}>Bank</span><span>{SELLER.bank}</span><span style={{color: "#666"}}>REG</span><span>{SELLER.reg}</span><span style={{color: "#666"}}>Account</span><span>{SELLER.account}</span><span style={{color: "#666"}}>IBAN</span><span style={{fontWeight:500,letterSpacing:"0.03em"}}>{SELLER.iban}</span><span style={{color: "#666"}}>BIC/SWIFT</span><span>{SELLER.swift}</span></div>
-              <div style={{marginTop:14,padding:"10px 14px",background: "#000",borderRadius:8,color:"#888",fontSize:10,lineHeight:1.6}}>{invoiceViewType==="balance"
+              <div style={{marginTop:14,padding:"12px 16px",background: "#1a1a1a",borderRadius:8,color:"#888",fontSize:10,lineHeight:1.6}}>{invoiceViewType==="balance"
                 ? `This is the remaining 70% balance for order ${displayId}. Please transfer ${formatEUR(inv.balanceAmount || 0)} to the bank account above. Shipment will proceed upon receipt of payment.`
                 : `Order will be confirmed upon receipt of the 30% deposit (${formatEUR(inv.depositAmount)}) plus shipping (${formatEUR(inv.shipping||0)}) = ${formatEUR(inv.depositInvoiceTotal || (inv.depositAmount + (inv.shipping || 0)))}. Remaining 70% (${formatEUR(inv.balanceAmount||(inv.totalWithVat-inv.depositAmount-(inv.shipping||0)))}) is due prior to shipment. Shipping included in deposit invoice.`
               }</div>

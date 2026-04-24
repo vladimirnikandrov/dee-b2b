@@ -68,7 +68,7 @@ async function generateInvoicePDF(order, type = "deposit") {
   // ── Header: Logo image ──
   const logoB64 = await getLogoBase64();
   if (logoB64) {
-    try { doc.addImage("data:image/png;base64," + logoB64, "PNG", margin, y - 2, 32, 8); } catch (e) { /* fallback below */ }
+    try { doc.addImage("data:image/png;base64," + logoB64, "PNG", margin, y - 4, 0, 10); } catch (e) { /* fallback below */ }
   }
   // Fallback text if image fails
   if (!logoB64) {
@@ -316,18 +316,22 @@ async function generateInvoicePDF(order, type = "deposit") {
   y += 6;
 
   // ── Footer note ──
-  doc.setFillColor(...darkCardBg);
-  doc.roundedRect(margin, y, contentW, 18, 2, 2, "F");
   doc.setFontSize(7);
   doc.setTextColor(...lightGray);
 
+  let noteText;
   if (isDeposit) {
-    const noteText = `Order will be confirmed upon receipt of the 30% deposit (${formatEUR(order.depositAmount)}) plus shipping (${formatEUR(order.shipping || 0)}) = ${formatEUR(order.depositInvoiceTotal || (order.depositAmount + (order.shipping || 0)))}. Remaining 70% (${formatEUR(order.balanceAmount)}) is due prior to shipment.`;
-    doc.text(noteText, margin + 4, y + 5, { maxWidth: contentW - 8 });
+    noteText = `Order will be confirmed upon receipt of the 30% deposit (${formatEUR(order.depositAmount)}) plus shipping (${formatEUR(order.shipping || 0)}) = ${formatEUR(order.depositInvoiceTotal || (order.depositAmount + (order.shipping || 0)))}. Remaining 70% (${formatEUR(order.balanceAmount)}) is due prior to shipment. Shipping included in deposit invoice.`;
   } else {
-    const noteText = `This is the remaining 70% balance for order ${order.orderId}. Please transfer the amount to the bank account above. Shipment will proceed upon receipt of payment.`;
-    doc.text(noteText, margin + 4, y + 5, { maxWidth: contentW - 8 });
+    noteText = `This is the remaining 70% balance for order ${order.orderId}. Please transfer the amount to the bank account above. Shipment will proceed upon receipt of payment.`;
   }
+
+  // Calculate text height to size the box dynamically
+  const noteLines = doc.splitTextToSize(noteText, contentW - 12);
+  const noteBoxH = noteLines.length * 3.5 + 8;
+  doc.setFillColor(...darkCardBg);
+  doc.roundedRect(margin, y, contentW, noteBoxH, 2, 2, "F");
+  doc.text(noteLines, margin + 6, y + 5.5);
 
   return doc.output("arraybuffer");
 }
