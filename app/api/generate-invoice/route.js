@@ -227,7 +227,7 @@ async function generateInvoicePDF(order, type = "deposit") {
     doc.setTextColor(...white);
     const displayVal = typeof value === "string" ? value : formatEUR(value);
     doc.text(displayVal, totValX, y, { align: "right" });
-    if (!big) {
+    if (!big && typeof value !== "string") {
       y += 1.5;
       doc.setDrawColor(...darkBorder);
       doc.setLineWidth(0.2);
@@ -334,6 +334,13 @@ async function generateInvoicePDF(order, type = "deposit") {
 
 export async function POST(request) {
   try {
+    // Basic origin check
+    const origin = request.headers.get("origin") || request.headers.get("referer") || "";
+    const allowedOrigins = ["order.deeapril.com", "dee-april-b2b.vercel.app", "localhost"];
+    if (!allowedOrigins.some(o => origin.includes(o))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const body = await request.json();
     const { order, type = "deposit", format = "base64" } = body;
 

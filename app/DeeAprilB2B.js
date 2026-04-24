@@ -153,7 +153,7 @@ const ORDER_STATUSES = [
   { key: "received", label: "Received" },
 ];
 
-const ADMIN_PASSWORD = "1804lovesyou";
+const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "1804lovesyou";
 
 const PROMO_CODES_DEFAULT = [
   { code: "MOODSCENTBAR", label: "B2VIP", discount_type: "fixed_prices", prices: { "100 ML": 48, "50 ML": 35, "20 ML": 16, "2 ML": 2, "KIT": 8 } }
@@ -252,7 +252,7 @@ function Toast({ message, visible, onHide }) {
   useEffect(() => { if (visible) { const t = setTimeout(onHide, 2800); return () => clearTimeout(t); } }, [visible, onHide]);
   if (!visible) return null;
   return (
-    <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",background:"#000",color:"#fff",padding:"14px 28px",borderRadius:14,fontSize:12,fontWeight:500,letterSpacing:"0.04em",fontFamily:FONT,zIndex:100,boxShadow:"0 8px 32px rgba(0,0,0,0.3)",animation:"toastIn 0.3s ease",pointerEvents:"none",whiteSpace:"nowrap"}}>{message}</div>
+    <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",background:"#fff",color:"#000",padding:"14px 28px",borderRadius:14,fontSize:12,fontWeight:500,letterSpacing:"0.04em",fontFamily:FONT,zIndex:100,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",animation:"toastIn 0.3s ease",pointerEvents:"none",whiteSpace:"nowrap"}}>{message}</div>
   );
 }
 
@@ -351,6 +351,8 @@ export default function DeeAprilB2B() {
   const [buyer, setBuyer] = useState({ company:"",address:"",city:"",country:"",zip:"",vat:"",email:"",contact:"" });
   const [orderNumber, setOrderNumber] = useState(generateOrderNumber);
   const [viewingOrderId, setViewingOrderId] = useState(null);
+  const pendingDeepOrder = useRef(null);
+  const viewRef = useRef(view);
   const [invoiceSource, setInvoiceSource] = useState(null);
   const [invoiceViewType, setInvoiceViewType] = useState("deposit"); // "deposit" or "balance"
   const invoiceRef = useRef(null);
@@ -376,6 +378,7 @@ export default function DeeAprilB2B() {
   const closeConfirm = () => setConfirm(c => ({ ...c, open: false }));
 
   const [noteInputs, setNoteInputs] = useState({});
+  const [submitting, setSubmitting] = useState(false);
 
   // ── Error Log (visible in admin panel) ──
   const [errorLog, setErrorLog] = useState([]);
@@ -422,10 +425,13 @@ export default function DeeAprilB2B() {
   const depositAmount = Math.round(totalBeforeShipping * 0.3 * 100) / 100;
   const depositInvoiceTotal = depositAmount + shippingAmount;
 
+  useEffect(() => { viewRef.current = view; }, [view]);
+
   useEffect(() => {
     // Check URL params for deep linking from emails
     const params = new URLSearchParams(window.location.search);
     const deepOrder = params.get("order");
+    if (deepOrder) pendingDeepOrder.current = deepOrder;
 
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
@@ -433,8 +439,8 @@ export default function DeeAprilB2B() {
       if (s) {
         loadProfile(s.user.id);
         loadOrders();
-        if (deepOrder) { setViewingOrderId(deepOrder); setInvoiceSource("myorders"); setView("invoice"); }
-        else if (view === "landing" || view === "login") setView("catalog");
+        if (pendingDeepOrder.current) { setViewingOrderId(pendingDeepOrder.current); setInvoiceSource("myorders"); setView("invoice"); pendingDeepOrder.current = null; }
+        else if (viewRef.current === "landing" || viewRef.current === "login") setView("catalog");
       }
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
@@ -442,7 +448,8 @@ export default function DeeAprilB2B() {
       if (s) {
         loadProfile(s.user.id);
         loadOrders();
-        if (view === "landing" || view === "login") setView("catalog");
+        if (pendingDeepOrder.current) { setViewingOrderId(pendingDeepOrder.current); setInvoiceSource("myorders"); setView("invoice"); pendingDeepOrder.current = null; }
+        else if (viewRef.current === "landing" || viewRef.current === "login") setView("catalog");
       }
     });
     return () => subscription.unsubscribe();
@@ -690,6 +697,9 @@ export default function DeeAprilB2B() {
   };
 
   const handleSubmitOrder = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
     // Validate stock availability
     const stockIssues = [];
     orderLines.forEach(line => {
@@ -736,7 +746,16 @@ export default function DeeAprilB2B() {
       shipping: shippingAmount, totalWithVat, depositAmount,
       balanceAmount: Math.round((totalBeforeShipping - depositAmount) * 100) / 100,
     };
-    sendNotification("order_placed_buyer", emailData, logError).catch(() => {});
+    const pdfOrder = {
+      orderId: orderNumber, buyerCompany: buyer.company, buyerContact: buyer.contact,
+      buyerAddress: buyer.address, buyerCity: buyer.city, buyerCountry: buyer.country,
+      buyerZip: buyer.zip, buyerVat: buyer.vat, buyerEmail: buyer.email,
+      lines: orderLines, totalWSP, vatAmount, vatLabel: vatInfo.label, vatNote: vatInfo.note,
+      shipping: shippingAmount, totalWithVat, depositAmount,
+      depositInvoiceTotal: depositInvoiceTotal,
+      balanceAmount: Math.round((totalBeforeShipping - depositAmount) * 100) / 100,
+    };
+    sendNotificationWithPDF("order_placed_buyer", emailData, pdfOrder, "deposit", logError).catch(() => {});
     sendNotification("order_placed_admin", emailData, logError).catch(() => {});
 
     // Deduct stock from inventory
@@ -759,12 +778,14 @@ export default function DeeAprilB2B() {
     setAppliedPromo(null);
     setPromoCode("");
     setOrderNumber(generateOrderNumber());
+    } finally { setSubmitting(false); }
   };
 
   const handleViewInvoice = (orderId, source, invType = "deposit") => { setViewingOrderId(orderId); setInvoiceSource(source); setInvoiceViewType(invType); setView("invoice"); };
 
   // Status key → email template mapping (only send when toggling ON)
   const STATUS_EMAIL_MAP = {
+    deposit_invoiced: "deposit_invoiced",
     deposit_paid: "deposit_paid",
     packed: "packed",
     balance_invoiced: "balance_invoiced",
@@ -805,7 +826,7 @@ export default function DeeAprilB2B() {
           depositAmount: order.depositAmount, depositInvoiceTotal: order.depositAmount + (order.shipping || 0),
           balanceAmount: order.balanceAmount, date: order.date,
         };
-        sendNotificationWithPDF("order_placed_buyer", emailData, pdfOrder, "deposit", logError);
+        sendNotificationWithPDF("deposit_invoiced", emailData, pdfOrder, "deposit", logError);
       } else if (key === "balance_invoiced") {
         const pdfOrder = {
           orderId, ...order.buyer, buyerCompany: order.buyer.company,
@@ -881,7 +902,7 @@ export default function DeeAprilB2B() {
   const canClientCancel = (order) => {
     if (order.cancelled) return false;
     const s = order.statuses;
-    return s.deposit_invoiced && !s.deposit_paid && !s.packed && !s.balance_invoiced && !s.balance_paid && !s.shipped && !s.received;
+    return !s.deposit_paid && !s.packed && !s.balance_invoiced && !s.balance_paid && !s.shipped && !s.received;
   };
 
   // Feature 2: Handle order updates
@@ -1238,7 +1259,7 @@ export default function DeeAprilB2B() {
                   <input className="da-input" style={{...inputStyle,flex:1,fontSize:12}} placeholder="Enter code" value={promoCodeInput} onChange={e=>setPromoCodeInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&applyPromoCode()} />
                   <button onClick={applyPromoCode} style={{background:"#fff",color:"#000",border:"none",padding:"10px 18px",borderRadius:10,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:FONT,whiteSpace:"nowrap",letterSpacing:"0.06em",textTransform:"uppercase"}}>Apply</button>
                 </div>
-                {appliedPromo && <div style={{marginTop:10,fontSize:11,color:"#2d6a2d",fontWeight:500}}>✓ {appliedPromo.label} pricing applied</div>}
+                {appliedPromo && <div style={{marginTop:10,fontSize:11,color:"#4ade80",fontWeight:500}}>✓ {appliedPromo.label} pricing applied</div>}
                 {promoError && <div style={{marginTop:10,fontSize:11,color:"#dc2626"}}>{promoError}</div>}
               </div>
             </div></FadeIn>
@@ -1257,7 +1278,7 @@ export default function DeeAprilB2B() {
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><div><div style={{fontSize:10,textTransform:"uppercase",letterSpacing:"0.1em",color: "#666"}}>Deposit Invoice</div><div style={{fontSize:10,color: "#999",marginTop:2}}>30% advance + shipping</div></div><span style={{fontSize:20,fontWeight:600}}>{formatEUR(depositInvoiceTotal)}</span></div>
                 </div>
                 <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:20}}>
-                  <button className="da-btn" onClick={()=>{if(canSubmit){askConfirm({title:"Confirm Order",message:`Place order ${orderNumber} for ${formatEUR(totalWithVat)}? A 30% deposit invoice of ${formatEUR(depositInvoiceTotal)} will be generated.`,confirmLabel:"Place Order",danger:false,onConfirm:async ()=>{closeConfirm();await handleSubmitOrder();}});}}} disabled={!canSubmit} style={{width:"100%",background:canSubmit?"#fff":"#333",color:canSubmit?"#000":"#666",border:"none",padding:"14px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:canSubmit?"pointer":"default",fontFamily:FONT}}>Place Order</button>
+                  <button className="da-btn" onClick={()=>{if(canSubmit&&!submitting){askConfirm({title:"Confirm Order",message:`Place order ${orderNumber} for ${formatEUR(totalWithVat)}? A 30% deposit invoice of ${formatEUR(depositInvoiceTotal)} will be generated.`,confirmLabel:"Place Order",danger:false,onConfirm:async ()=>{closeConfirm();await handleSubmitOrder();}});}}} disabled={!canSubmit||submitting} style={{width:"100%",background:canSubmit&&!submitting?"#fff":"#333",color:canSubmit&&!submitting?"#000":"#666",border:"none",padding:"14px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:canSubmit&&!submitting?"pointer":"default",fontFamily:FONT}}>{submitting?"Placing Order...":"Place Order"}</button>
                   <button className="da-btn da-btn-outline" onClick={()=>setView("catalog")} style={{width:"100%",background:"transparent",border: "1px solid #222",padding:"12px",borderRadius:12,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color: "#eee",transition:"all 0.25s"}}>Back to Catalog</button>
                 </div>
               </div>
@@ -1299,17 +1320,19 @@ export default function DeeAprilB2B() {
                         const stock = getStock(l.sku);
                         const maxVal = stock !== null ? stock : undefined;
                         return (
-                        <div key={i} style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:8,alignItems:"center",fontSize:11}}>
-                          <span>{l.product} — {SIZE_LABELS[l.size]}</span>
-                          <input type="number" min="0" max={maxVal} style={{...inputStyle,width:60,padding:"6px 8px",fontSize:11}} value={editQtys[l.sku]!==undefined?editQtys[l.sku]:l.qty} onChange={e=>{const raw=e.target.value;if(raw===""){setEditQtys({...editQtys,[l.sku]:0});return;}let v=parseInt(raw,10)||0;if(stock!==null)v=Math.min(v,stock);setEditQtys({...editQtys,[l.sku]:Math.max(0,v)});}} />
-                          {stock !== null && <span style={{fontSize:9,color: "#666"}}>(max {stock})</span>}
+                        <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,fontSize:11,padding:"6px 0",borderBottom:"1px solid #222"}}>
+                          <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.product} — {SIZE_LABELS[l.size]} @ {formatEUR(l.unitPrice)}</span>
+                          <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                            <input type="number" min="0" max={maxVal} style={{...inputStyle,width:56,padding:"6px 8px",fontSize:11,textAlign:"center"}} value={editQtys[l.sku]!==undefined?editQtys[l.sku]:l.qty} onChange={e=>{const raw=e.target.value;if(raw===""){setEditQtys({...editQtys,[l.sku]:0});return;}let v=parseInt(raw,10)||0;if(stock!==null)v=Math.min(v,stock);setEditQtys({...editQtys,[l.sku]:Math.max(0,v)});}} />
+                            {stock !== null && <span style={{fontSize:9,color: "#666",whiteSpace:"nowrap"}}>(max {stock})</span>}
+                          </div>
                         </div>
                         );
                       })}
                     </div>
                     <div style={{display:"flex",gap:8,marginTop:12}}>
-                      <button onClick={()=>handleUpdateOrder(order.id)} style={{background:"#000",color:"#fff",border:"none",padding:"8px 16px",borderRadius:8,fontSize:10,cursor:"pointer",fontFamily:FONT,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>Save</button>
-                      <button onClick={()=>{setEditingOrderId(null);setEditQtys({});}} style={{background:"transparent",border: "1px solid #222",color: "#eee",padding:"8px 16px",borderRadius:8,fontSize:10,cursor:"pointer",fontFamily:FONT,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>Cancel</button>
+                      <button onClick={()=>handleUpdateOrder(order.id)} style={{background:"#fff",color:"#000",border:"none",padding:"8px 16px",borderRadius:8,fontSize:10,cursor:"pointer",fontFamily:FONT,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>Save</button>
+                      <button onClick={()=>{setEditingOrderId(null);setEditQtys({});}} style={{background:"transparent",border: "1px solid #333",color: "#eee",padding:"8px 16px",borderRadius:8,fontSize:10,cursor:"pointer",fontFamily:FONT,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em"}}>Cancel</button>
                     </div>
                   </div>
                 ) : (
@@ -1324,6 +1347,7 @@ export default function DeeAprilB2B() {
                     <>
                       {!order.cancelled && !order.statuses.balance_paid && <button className="da-btn da-btn-outline" onClick={()=>{setEditingOrderId(order.id);setEditQtys(Object.fromEntries(order.lines.map(l=>[l.sku,l.qty])));}} style={{background:"transparent",border: "1px solid #222",padding:"9px 20px",borderRadius:10,fontSize:10,color: "#eee",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Edit</button>}
                       <button className="da-btn da-btn-outline" onClick={()=>repeatOrder(order)} style={{background:"transparent",border: "1px solid #222",padding:"9px 20px",borderRadius:10,fontSize:10,color: "#eee",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Repeat Order</button>
+                      {order.statuses.shipped && !order.statuses.received && !order.cancelled && <button className="da-btn da-btn-outline" onClick={()=>toggleOrderStatus(order.id,"received")} style={{background:"#fff",border:"none",padding:"9px 20px",borderRadius:10,fontSize:10,color:"#000",cursor:"pointer",fontFamily:FONT,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Confirm Receipt</button>}
                       {canClientCancel(order) && <button className="da-btn da-btn-outline" onClick={()=>cancelOrder(order.id,false)} style={{background:"transparent",border:"1px solid #b91c1c",padding:"9px 20px",borderRadius:10,fontSize:10,color:"#b91c1c",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Cancel</button>}
                     </>
                   )}
@@ -1401,7 +1425,7 @@ export default function DeeAprilB2B() {
                   <div key={`${pi}-${vi}`} style={{padding:"12px",background: "#1a1a1a",borderRadius:8,border: "1px solid #222"}}>
                     <div style={{fontSize:10,fontWeight:600,color: "#eee",marginBottom:4}}>{p.name}</div>
                     <div style={{fontSize:9,color: "#666",marginBottom:8}}>{v.size}</div>
-                    <input type="number" className="da-input" style={{...inputStyle,fontSize:11,padding:"8px 12px"}} value={inventory[v.sku]!==undefined?inventory[v.sku]:""} onChange={e=>setInventory({...inventory,[v.sku]:e.target.value===""?0:parseInt(e.target.value)||0})} placeholder="0"/>
+                    <input type="number" className="da-input" style={{...inputStyle,fontSize:11,padding:"8px 12px"}} value={inventory[v.sku]!==undefined?inventory[v.sku]:""} onChange={e=>{const raw=e.target.value;if(raw===""){setInventory({...inventory,[v.sku]:0});return;}const n=parseInt(raw,10);setInventory({...inventory,[v.sku]:isNaN(n)?0:Math.max(0,n)});}} placeholder="0"/>
                   </div>
                 )))}
               </div>
@@ -1506,7 +1530,7 @@ export default function DeeAprilB2B() {
                     <div style={{fontSize:10,color: "#666",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Company</div>
                     <div style={{fontSize:12}}>
                       {order.buyer.company}
-                      {order.promoLabel && <span style={{marginLeft:8,padding:"2px 8px",background:"#e8f5e9",color:"#2e7d32",borderRadius:4,fontSize:9,fontWeight:600,display:"inline-block"}}>{order.promoLabel}</span>}
+                      {order.promoLabel && <span style={{marginLeft:8,padding:"2px 8px",background:"#14532d",color:"#4ade80",borderRadius:4,fontSize:9,fontWeight:600,display:"inline-block"}}>{order.promoLabel}</span>}
                     </div>
                   </div>
                   <div>
@@ -1593,7 +1617,7 @@ export default function DeeAprilB2B() {
     const handleBack = () => {
       if (invoiceSource==="admin") { setViewingOrderId(null);setInvoiceSource(null);setView("admin"); }
       else if (invoiceSource==="myorders") { setViewingOrderId(null);setInvoiceSource(null);setView("myorders"); }
-      else { setQuantities({});setOrderNumber(generateOrderNumber());setViewingOrderId(null);setInvoiceSource(null);setBuyer(b=>({...b,address:"",city:"",country:"",zip:"",vat:"",contact:""}));setPromoCode("");setAppliedPromo(null);setView("catalog"); }
+      else { setQuantities({});setOrderNumber(generateOrderNumber());setViewingOrderId(null);setInvoiceSource(null);setPromoCode("");setAppliedPromo(null);setView("catalog"); }
     };
 
     return (
@@ -1620,10 +1644,10 @@ export default function DeeAprilB2B() {
               <div style={{textAlign:"right"}}><div style={{fontSize:15,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase"}}>{invoiceViewType==="balance"?"Balance Invoice":"Deposit Invoice"}</div><div style={{fontSize:10,color: "#666",marginTop:3}}>{invoiceViewType==="balance"?"70% Remaining Balance":"30% Advance Payment"}</div></div>
             </div>
             <div className="da-invoice-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24,marginBottom:20,fontSize:11,lineHeight:1.7}}>
-              <div><div style={{fontSize:9,textTransform:"uppercase",letterSpacing:"0.14em",color: "#999",marginBottom:6}}>From</div><div style={{fontWeight:600}}>{SELLER.legalName}</div><div style={{color: "#888"}}>{SELLER.address}</div><div style={{color: "#888"}}>{SELLER.email}</div><div style={{color: "#888"}}>{SELLER.phone}</div></div>
+              <div><div style={{fontSize:9,textTransform:"uppercase",letterSpacing:"0.14em",color: "#999",marginBottom:6}}>From</div><div style={{fontWeight:600}}>{SELLER.legalName}</div><div style={{color: "#888"}}>{SELLER.address}</div><div style={{color: "#888"}}>CVR: {SELLER.cvr}</div><div style={{color: "#888"}}>{SELLER.email}</div><div style={{color: "#888"}}>{SELLER.phone}</div></div>
               <div><div style={{fontSize:9,textTransform:"uppercase",letterSpacing:"0.14em",color: "#999",marginBottom:6}}>Bill To</div><div style={{fontWeight:600}}>{inv.buyer.company}</div>{inv.buyer.contact&&<div style={{color: "#888"}}>{inv.buyer.contact}</div>}<div style={{color: "#888"}}>{inv.buyer.address}</div><div style={{color: "#888"}}>{inv.buyer.zip} {inv.buyer.city}, {inv.buyer.country}</div>{inv.buyer.vat&&<div style={{color: "#888"}}>VAT: {inv.buyer.vat}</div>}<div style={{color: "#888"}}>{inv.buyer.email}</div></div>
             </div>
-            <div className="da-invoice-meta" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:20,fontSize:11,padding:"12px 16px",background: "#000",borderRadius:10}}>
+            <div className="da-invoice-meta" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:20,fontSize:11,padding:"12px 16px",background: "#1a1a1a",borderRadius:10}}>
               <div><div style={{fontSize:9,textTransform:"uppercase",letterSpacing:"0.14em",color: "#999",marginBottom:3}}>Invoice No.</div><div style={{fontWeight:600}}>{invoiceViewType==="balance"?displayId+"-BAL":displayId}</div></div>
               <div><div style={{fontSize:9,textTransform:"uppercase",letterSpacing:"0.14em",color: "#999",marginBottom:3}}>Date</div><div>{fmtDate(invDate)}</div></div>
               <div><div style={{fontSize:9,textTransform:"uppercase",letterSpacing:"0.14em",color: "#999",marginBottom:3}}>Due Date</div><div>{fmtDate(due)}</div></div>
@@ -1651,7 +1675,7 @@ export default function DeeAprilB2B() {
               <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:"3px 14px"}}><span style={{color: "#666"}}>Bank</span><span>{SELLER.bank}</span><span style={{color: "#666"}}>REG</span><span>{SELLER.reg}</span><span style={{color: "#666"}}>Account</span><span>{SELLER.account}</span><span style={{color: "#666"}}>IBAN</span><span style={{fontWeight:500,letterSpacing:"0.03em"}}>{SELLER.iban}</span><span style={{color: "#666"}}>BIC/SWIFT</span><span>{SELLER.swift}</span></div>
               <div style={{marginTop:14,padding:"10px 14px",background: "#000",borderRadius:8,color:"#888",fontSize:10,lineHeight:1.6}}>{invoiceViewType==="balance"
                 ? `This is the remaining 70% balance for order ${displayId}. Please transfer ${formatEUR(inv.balanceAmount || 0)} to the bank account above. Shipment will proceed upon receipt of payment.`
-                : `Order will be confirmed upon receipt of the 30% deposit (${formatEUR(inv.depositAmount)}) plus shipping (${formatEUR(inv.shipping||0)}) = ${formatEUR(inv.depositInvoiceTotal || (inv.depositAmount + (inv.shipping || 0)))}. Remaining 70% (${formatEUR(inv.balanceAmount||(inv.totalBeforeShipping-inv.depositAmount))}) is due prior to shipment. Shipping included in deposit invoice.`
+                : `Order will be confirmed upon receipt of the 30% deposit (${formatEUR(inv.depositAmount)}) plus shipping (${formatEUR(inv.shipping||0)}) = ${formatEUR(inv.depositInvoiceTotal || (inv.depositAmount + (inv.shipping || 0)))}. Remaining 70% (${formatEUR(inv.balanceAmount||(inv.totalWithVat-inv.depositAmount-(inv.shipping||0)))}) is due prior to shipment. Shipping included in deposit invoice.`
               }</div>
             </div>
           </div>

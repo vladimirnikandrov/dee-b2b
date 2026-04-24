@@ -29,9 +29,10 @@ function baseLayout(content, preheader = "") {
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
 <title>Dee April Parfums</title>
-${preheader ? `<span style="display:none;font-size:1px;color:#000000;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">${preheader}</span>` : ""}
+
 </head>
 <body style="margin:0;padding:0;background-color:#000000;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#ffffff;-webkit-font-smoothing:antialiased;">
+${preheader ? `<span style="display:none;font-size:1px;color:#000000;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">${preheader}</span>` : ""}
 <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background-color:#000000;">
 <tr><td align="center" style="padding:48px 24px;">
 <table role="presentation" cellpadding="0" cellspacing="0" width="560" style="max-width:560px;width:100%;">
@@ -167,6 +168,25 @@ const TEMPLATES = {
       </table>
       ${ctaButton("Open Admin Panel")}
     `, `New order from ${data.buyerCompany} — ${formatEUR(data.totalWithVat)}`)
+  }),
+
+  // ── BUYER: Deposit Invoiced ──
+  deposit_invoiced: (data) => ({
+    to: data.buyerEmail,
+    subject: `Order ${data.orderId} — Deposit Invoice`,
+    html: baseLayout(`
+      <h1 style="margin:0 0 8px;font-size:22px;font-weight:600;letter-spacing:0.04em;text-align:center;color:#fff;">Deposit Invoice</h1>
+      <p style="margin:0 0 24px;font-size:13px;color:#ccc;text-align:center;">Your 30% deposit invoice for order ${data.orderId} is ready.</p>
+      ${statusBadge("30% Deposit Due", "#d97706")}
+      ${divider()}
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+        <tr><td style="font-size:11px;color:#777;padding:4px 0;">Order</td><td style="font-size:12px;font-weight:600;text-align:right;padding:4px 0;color:#fff;">${data.orderId}</td></tr>
+        <tr><td style="font-size:11px;color:#777;padding:4px 0;">Deposit Amount</td><td style="font-size:14px;font-weight:700;text-align:right;padding:4px 0;color:#fff;">${formatEUR(data.depositAmount || 0)}</td></tr>
+      </table>
+      ${divider()}
+      <p style="font-size:12px;color:#ccc;margin:0;text-align:center;">Your deposit invoice is attached as a PDF. Please complete the payment to confirm your order — bank details are in the invoice.</p>
+      ${ctaButton("View Invoice", `${PORTAL_URL}?order=${data.orderId}`)}
+    `, `Deposit invoice for order ${data.orderId}`)
   }),
 
   // ── BUYER: Deposit Paid ──
@@ -325,6 +345,13 @@ const TEMPLATES = {
 
 export async function POST(request) {
   try {
+    // Basic origin check — only allow requests from our own domain
+    const origin = request.headers.get("origin") || request.headers.get("referer") || "";
+    const allowedOrigins = ["order.deeapril.com", "dee-april-b2b.vercel.app", "localhost"];
+    if (!allowedOrigins.some(o => origin.includes(o))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ error: "RESEND_API_KEY not configured" }, { status: 500 });
