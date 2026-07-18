@@ -1,18 +1,14 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  "https://gsojazybzodouvdmqkvg.supabase.co",
-  "sb_publishable_oItKAbWre9gQpxJZ38k50Q_aPJrn0b5"
-);
+import { SELLER } from "@/lib/seller";
+import { formatEUR, SIZE_LABELS } from "@/lib/format";
+import { LOGO_WHITE, LOGO_BLACK, HERO_COVER, PRODUCT_IMAGES } from "@/lib/assets";
+import { PRODUCTS, SHIPPING_FLAT } from "@/lib/products";
+import { getVatInfo } from "@/lib/vat";
 
 /* ═══════════════════════════════════════════
-   LOGO SVG
+   LOGO
    ═══════════════════════════════════════════ */
-
-const LOGO_WHITE = "https://gsojazybzodouvdmqkvg.supabase.co/storage/v1/object/public/DA%20Assets/parfums-white%201.png";
-const LOGO_BLACK = "https://gsojazybzodouvdmqkvg.supabase.co/storage/v1/object/public/DA%20Assets/parfums-black%201.png";
 
 function Logo({ color = "#fff", style = {} }) {
   const src = color === "#000" ? LOGO_BLACK : LOGO_WHITE;
@@ -23,137 +19,17 @@ function Logo({ color = "#fff", style = {} }) {
    DATA
    ═══════════════════════════════════════════ */
 
-const PRODUCTS = [
-  { name: "Parfum", collection: "Chapter I", variants: [
-    { size: "100 ML", sku: "DEP100200", ean: "0788364060525", wsp: 75, rrp: 200 },
-    { size: "50 ML", sku: "DEP100100", ean: "0792649468432", wsp: 55, rrp: 145 },
-    { size: "20 ML", sku: "DEP100300", ean: "0788364060594", wsp: 25, rrp: 65 },
-    { size: "2 ML", sku: "DEP100701", ean: null, wsp: 2, rrp: null, label: "Tester" },
-  ]},
-  { name: "Parfum I", collection: "Chapter I", variants: [
-    { size: "100 ML", sku: "DEP100201", ean: "0788364060532", wsp: 75, rrp: 200 },
-    { size: "50 ML", sku: "DEP100101", ean: "0788364060501", wsp: 55, rrp: 145 },
-    { size: "20 ML", sku: "DEP100301", ean: "0788364060563", wsp: 25, rrp: 65 },
-    { size: "2 ML", sku: "DEP100702", ean: null, wsp: 2, rrp: null, label: "Tester" },
-  ]},
-  { name: "Parfum II", collection: "Chapter I", variants: [
-    { size: "100 ML", sku: "DEP100202", ean: "0788364060549", wsp: 75, rrp: 200 },
-    { size: "50 ML", sku: "DEP100102", ean: "0788364060518", wsp: 55, rrp: 145 },
-    { size: "20 ML", sku: "DEP100302", ean: "0788364060570", wsp: 25, rrp: 65 },
-    { size: "2 ML", sku: "DEP100703", ean: null, wsp: 2, rrp: null, label: "Tester" },
-  ]},
-  { name: "Tester / Parfum", collection: "Testers", variants: [
-    { size: "100 ML", sku: "TEST100200", ean: null, wsp: 65, rrp: null, label: "Tester" },
-    { size: "50 ML", sku: "TEST100100", ean: null, wsp: 45, rrp: null, label: "Tester" },
-    { size: "20 ML", sku: "TEST100300", ean: null, wsp: 15, rrp: null, label: "Tester" },
-  ]},
-  { name: "Tester / Parfum I", collection: "Testers", variants: [
-    { size: "100 ML", sku: "TEST100201", ean: null, wsp: 65, rrp: null, label: "Tester" },
-    { size: "50 ML", sku: "TEST100101", ean: null, wsp: 45, rrp: null, label: "Tester" },
-    { size: "20 ML", sku: "TEST100301", ean: null, wsp: 15, rrp: null, label: "Tester" },
-  ]},
-  { name: "Tester / Parfum II", collection: "Testers", variants: [
-    { size: "100 ML", sku: "TEST100202", ean: null, wsp: 65, rrp: null, label: "Tester" },
-    { size: "50 ML", sku: "TEST100102", ean: null, wsp: 45, rrp: null, label: "Tester" },
-    { size: "20 ML", sku: "TEST100302", ean: null, wsp: 15, rrp: null, label: "Tester" },
-  ]},
-  { name: "Discovery Kit", collection: "Discovery", variants: [
-    { size: "KIT", sku: "DEP100800", ean: null, wsp: 8, rrp: null, label: "Discovery Kit" },
-  ]},
-];
-
-const PRODUCT_IMAGES = {
-  "100 ML": "https://gsojazybzodouvdmqkvg.supabase.co/storage/v1/object/sign/DA%20Assets/100ml.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV80ZTU5ZWYwMS1lNDhiLTQ2ZTAtYjVmOS0yMTU4NDRhM2EzZGEiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJEQSBBc3NldHMvMTAwbWwucG5nIiwiaWF0IjoxNzc0NTcxNzc5LCJleHAiOjE4MDYxMDc3Nzl9.fMQvtJyRf-kKZc6WvL5FA3IMSuaPrvMpuONQ0acExuQ",
-  "50 ML": "https://gsojazybzodouvdmqkvg.supabase.co/storage/v1/object/sign/DA%20Assets/50ml.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV80ZTU5ZWYwMS1lNDhiLTQ2ZTAtYjVmOS0yMTU4NDRhM2EzZGEiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJEQSBBc3NldHMvNTBtbC5wbmciLCJpYXQiOjE3NzQ1NzE3NjcsImV4cCI6MTgwNjEwNzc2N30.XT_CMqnkZmO-HVcAnRHfQcxLZ0_rCXdSnsQIYkrZMo4",
-  "20 ML": "https://gsojazybzodouvdmqkvg.supabase.co/storage/v1/object/sign/DA%20Assets/20ml.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV80ZTU5ZWYwMS1lNDhiLTQ2ZTAtYjVmOS0yMTU4NDRhM2EzZGEiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJEQSBBc3NldHMvMjBtbC5wbmciLCJpYXQiOjE3NzQ1NzE3NTksImV4cCI6MTgwNjEwNzc1OX0.NSLG3CClybM4zPaiHRcyOk8hjvr5XN2xehI9_8mGNYE",
-  "2 ML": "https://gsojazybzodouvdmqkvg.supabase.co/storage/v1/object/sign/DA%20Assets/2ml.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV80ZTU5ZWYwMS1lNDhiLTQ2ZTAtYjVmOS0yMTU4NDRhM2EzZGEiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJEQSBBc3NldHMvMm1sLnBuZyIsImlhdCI6MTc3NDU3MTczMSwiZXhwIjoxODA2MTA3NzMxfQ.umtxR16GP3dApJRYQkdAVeSyPyfKSOehqhq83vbJKnw",
-};
-const SIZE_LABELS = { "100 ML": "100ml", "50 ML": "50ml", "20 ML": "20ml Travel", "2 ML": "2ml Tester", "KIT": "Discovery Kit" };
-
-const SELLER = {
-  legalName: "DA DESIGN APS", brandName: "Dee April Parfums",
-  address: "Piniehøj 17, 2960 Rungsted Kyst, Denmark",
-  email: "order@deeapril.com", phone: "+45 25 68 88 99",
-  bank: "NORDEA, Grønjordsvej 10, 2300 København S, Denmark",
-  reg: "2150", account: "9039315170", cvr: "45305481",
-  iban: "DK80 2000 9039 3151 70", swift: "NDEADKKK",
-};
-
-const SHIPPING_FLAT = 35;
-
-// Email notification helper — calls /api/send-email
-const sendNotification = async (type, data, onError) => {
-  try {
-    const res = await fetch("/api/send-email", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, data }),
-    });
-    if (!res.ok && onError) onError("sendNotification:" + type, `HTTP ${res.status}`);
-  } catch (err) {
-    if (onError) onError("sendNotification:" + type, err.message || err);
-    console.error("Notification error:", err);
-  }
-};
-
-// PDF invoice generator — calls /api/generate-invoice, returns { filename, base64 }
-const generateInvoicePDF = async (order, invoiceType = "deposit", onError) => {
-  try {
-    const res = await fetch("/api/generate-invoice", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ order, type: invoiceType }),
-    });
-    if (!res.ok) { if (onError) onError("generateInvoicePDF:" + invoiceType, `HTTP ${res.status}`); return null; }
-    const result = await res.json();
-    if (result.success) return { filename: result.filename, base64: result.base64 };
-    if (onError) onError("generateInvoicePDF:" + invoiceType, result.error || "Unknown error");
-  } catch (err) {
-    if (onError) onError("generateInvoicePDF:" + invoiceType, err.message || err);
-    console.error("PDF generation error:", err);
-  }
-  return null;
-};
-
-// Send email notification with PDF attachment
-const sendNotificationWithPDF = async (emailType, emailData, order, invoiceType, onError) => {
-  const pdf = await generateInvoicePDF(order, invoiceType, onError);
-  if (pdf) emailData.pdfAttachment = pdf;
-  await sendNotification(emailType, emailData, onError);
-};
-
-// e-conomic API — tokens to be configured by client
-const ECONOMIC_APP_SECRET = ""; // App Secret Token — set in Supabase env or here
-const ECONOMIC_AGREEMENT = ""; // Agreement Grant Token — set in Supabase env or here
-const ECONOMIC_API = "https://restapi.e-conomic.com";
-
 const FONT = "'Helvetica Neue', Helvetica, Arial, sans-serif";
 const base = { fontFamily: FONT, color: "#fff", background: "#000", minHeight: "100vh", margin: 0, padding: 0 };
 const inputStyle = { width: "100%", padding: "12px 16px", border: "1px solid #333", fontSize: 13, fontFamily: FONT, outline: "none", borderRadius: 10, background: "#1a1a1a", color: "#ccc", transition: "border-color 0.2s", boxSizing: "border-box" };
 const labelStyle = { fontSize: 10, textTransform: "uppercase", letterSpacing: "0.12em", color: "#666", marginBottom: 6, display: "block" };
 
-const EU_COUNTRIES = ["Austria","Belgium","Bulgaria","Croatia","Cyprus","Czech Republic","Czechia","Denmark","Estonia","Finland","France","Germany","Greece","Hungary","Ireland","Italy","Latvia","Lithuania","Luxembourg","Malta","Netherlands","Poland","Portugal","Romania","Slovakia","Slovenia","Spain","Sweden"];
-const DK_VAT_RATE = 0.25;
-
-function getVatInfo(country, vatNumber) {
-  const c = (country || "").trim();
-  const isDK = /^denmark$/i.test(c) || /^dk$/i.test(c) || /^danmark$/i.test(c);
-  const isEU = EU_COUNTRIES.some((eu) => eu.toLowerCase() === c.toLowerCase());
-  const hasVat = (vatNumber || "").trim().length >= 5;
-  if (isDK) return { rate: DK_VAT_RATE, label: "Danish VAT 25%", note: "Incl. 25% moms" };
-  if (isEU && hasVat) return { rate: 0, label: "EU Reverse Charge", note: "VAT 0% — Reverse charge, Art. 196 Council Directive 2006/112/EC" };
-  if (isEU && !hasVat) return { rate: DK_VAT_RATE, label: "EU (no VAT ID) — Danish VAT 25%", note: "No valid EU VAT number provided — Danish 25% VAT applies" };
-  return { rate: 0, label: "Export (0% VAT)", note: "VAT exempt — export outside EU" };
-}
-
 const ORDER_STATUSES = [
-  { key: "deposit_invoiced", label: "30% Invoiced" }, { key: "deposit_paid", label: "Deposit Paid" },
-  { key: "packed", label: "Packed" }, { key: "balance_invoiced", label: "70% Invoiced" },
-  { key: "balance_paid", label: "Balance Paid" }, { key: "shipped", label: "Shipped" },
+  { key: "deposit_invoiced", label: "Shipping Invoiced" }, { key: "deposit_paid", label: "Shipping Paid" },
+  { key: "packed", label: "Packed" }, { key: "balance_invoiced", label: "Full Invoiced" },
+  { key: "balance_paid", label: "Paid in Full" }, { key: "shipped", label: "Shipped" },
   { key: "received", label: "Received" },
 ];
-
-const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "1804lovesyou";
 
 const PROMO_CODES_DEFAULT = [
   { code: "MOODSCENTBAR", label: "B2VIP", discount_type: "fixed_prices", prices: { "100 ML": 48, "50 ML": 35, "20 ML": 16, "2 ML": 2, "KIT": 8 } }
@@ -241,7 +117,6 @@ function FadeIn({ children, delay = 0, style = {} }) {
   return <div style={{animation:`fadeUp 0.6s cubic-bezier(0.23,1,0.32,1) ${delay}s both`,...style}}>{children}</div>;
 }
 
-function formatEUR(n) { return new Intl.NumberFormat("en-IE",{style:"currency",currency:"EUR",minimumFractionDigits:2}).format(n); }
 function generateOrderNumber() { const d=new Date(); return `DA-${d.getFullYear().toString().slice(-2)}${String(d.getMonth()+1).padStart(2,"0")}-${Math.floor(Math.random()*9000)+1000}`; }
 
 /* ═══════════════════════════════════════════
@@ -335,13 +210,14 @@ function AuthScreen({ title, fields, onSubmit, submitLabel, altText, altAction, 
 export default function DeeAprilB2B() {
   useStyleInjection();
 
-  const [session, setSession] = useState(null);
+  const [session, setSession] = useState(null); // { id, email, role } | null
   const [loading, setLoading] = useState(true);
-  const [authForm, setAuthForm] = useState({ company:"", email:"", password:"" });
+  const [authForm, setAuthForm] = useState({ company:"", email:"" });
   const [authError, setAuthError] = useState("");
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [adminPw, setAdminPw] = useState("");
-  const [adminError, setAdminError] = useState("");
+  const [otpEmail, setOtpEmail] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [admins, setAdmins] = useState([]);
+  const [adminManageForm, setAdminManageForm] = useState({ email: "", company: "" });
   const [adminExpanded, setAdminExpanded] = useState(null);
   const [adminCompanyFilter, setAdminCompanyFilter] = useState(null);
   const [adminStatusFilter, setAdminStatusFilter] = useState("all");
@@ -364,10 +240,9 @@ export default function DeeAprilB2B() {
   const [promoCodeInput, setPromoCodeInput] = useState("");
   const [adminPromoForm, setAdminPromoForm] = useState({ code: "", label: "", prices: { "100 ML": "", "50 ML": "", "20 ML": "", "2 ML": "", "KIT": "" } });
 
-  const currentUser = session?.user ? {
-    company: session.user.user_metadata?.company || "",
-    email: session.user.email
-  } : null;
+  // company comes from the buyer profile (loaded separately), not the
+  // session — the session only carries { id, email, role }.
+  const currentUser = session ? { company: buyer.company || "", email: session.email } : null;
 
   const [toast, setToast] = useState({ visible: false, message: "" });
   const showToast = useCallback((msg) => setToast({ visible: true, message: msg }), []);
@@ -422,37 +297,31 @@ export default function DeeAprilB2B() {
   const shippingAmount = totalItems > 0 ? SHIPPING_FLAT : 0;
   const totalBeforeShipping = totalWSP + vatAmount;
   const totalWithVat = totalBeforeShipping + shippingAmount;
-  const depositAmount = Math.round(totalBeforeShipping * 0.3 * 100) / 100;
-  const depositInvoiceTotal = depositAmount + shippingAmount;
+  // No 30/70 split — first invoice is shipping only, second is the full order value.
+  const depositAmount = shippingAmount;
+  const depositInvoiceTotal = depositAmount;
 
   useEffect(() => { viewRef.current = view; }, [view]);
 
   useEffect(() => {
-    // Check URL params for deep linking from emails
+    // Check URL params for deep linking from emails.
     const params = new URLSearchParams(window.location.search);
     const deepOrder = params.get("order");
     if (deepOrder) pendingDeepOrder.current = deepOrder;
 
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      setLoading(false);
-      if (s) {
-        loadProfile(s.user.id);
-        loadOrders();
-        if (pendingDeepOrder.current) { setViewingOrderId(pendingDeepOrder.current); setInvoiceSource("myorders"); setView("invoice"); pendingDeepOrder.current = null; }
-        else if (viewRef.current === "landing" || viewRef.current === "login") setView("catalog");
-      }
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-      if (s) {
-        loadProfile(s.user.id);
-        loadOrders();
-        if (pendingDeepOrder.current) { setViewingOrderId(pendingDeepOrder.current); setInvoiceSource("myorders"); setView("invoice"); pendingDeepOrder.current = null; }
-        else if (viewRef.current === "landing" || viewRef.current === "login") setView("catalog");
-      }
-    });
-    return () => subscription.unsubscribe();
+    fetch("/api/auth/session")
+      .then((r) => r.json())
+      .then(({ session: s }) => {
+        setSession(s);
+        setLoading(false);
+        if (s) {
+          loadProfile();
+          loadOrders();
+          if (pendingDeepOrder.current) { setViewingOrderId(pendingDeepOrder.current); setInvoiceSource("myorders"); setView("invoice"); pendingDeepOrder.current = null; }
+          else if (viewRef.current === "landing" || viewRef.current === "login") setView(s.role === "admin" ? "admin" : "catalog");
+        }
+      })
+      .catch(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -462,16 +331,12 @@ export default function DeeAprilB2B() {
 
   const loadPromoCodes = async () => {
     try {
-      const { data, error } = await supabase.from("promo_codes").select("*");
-      if (error) {
-        logError("loadPromoCodes", error.message || error);
-        setPromoCodes(PROMO_CODES_DEFAULT);
-      } else if (data && data.length > 0) {
-        setPromoCodes(data);
-      } else {
-        setPromoCodes(PROMO_CODES_DEFAULT);
-      }
+      const res = await fetch("/api/promo-codes");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { promoCodes: data } = await res.json();
+      setPromoCodes(data && data.length > 0 ? data : PROMO_CODES_DEFAULT);
     } catch (e) {
+      logError("loadPromoCodes", e.message || e);
       setPromoCodes(PROMO_CODES_DEFAULT);
     }
   };
@@ -479,18 +344,14 @@ export default function DeeAprilB2B() {
   // Feature 3: Load and save inventory
   const loadInventory = async () => {
     try {
-      const { data, error } = await supabase.from("inventory").select("*");
-      if (error) {
-        logError("loadInventory", error.message || error);
-        setInventory({});
-      } else if (data && data.length > 0) {
-        const inv = {};
-        data.forEach(row => {
-          inv[row.sku] = row.stock;
-        });
-        setInventory(inv);
-      }
+      const res = await fetch("/api/inventory");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const { inventory: rows } = await res.json();
+      const inv = {};
+      (rows || []).forEach((row) => { inv[row.sku] = row.stock; });
+      setInventory(inv);
     } catch (e) {
+      logError("loadInventory", e.message || e);
       setInventory({});
     }
   };
@@ -503,116 +364,111 @@ export default function DeeAprilB2B() {
           records.push({ sku: v.sku, product_name: p.name, size: v.size, stock: inventory[v.sku] || 0 });
         });
       });
-      await supabase.from("inventory").upsert(records, { onConflict: "sku" });
+      const res = await fetch("/api/inventory", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ records }) });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `HTTP ${res.status}`); }
       showToast("Inventory saved");
     } catch (e) {
       logError("saveInventory", e.message || e); showToast("Error saving inventory: " + e.message);
     }
   };
 
-  const loadProfile = async (userId) => {
-    const { data } = await supabase.from("buyer_profiles").select("*").eq("user_id", userId).single();
-    if (data) setBuyer({ company: data.company||"", contact: data.contact||"", address: data.address||"", city: data.city||"", country: data.country||"", zip: data.zip||"", vat: data.vat||"", email: data.email||"" });
+  // Returns the loaded profile so callers (e.g. handleVerifyOtp) can use it
+  // immediately without waiting on a second render for `buyer` state to update.
+  const loadProfile = async () => {
+    try {
+      const res = await fetch("/api/profile");
+      if (!res.ok) return null;
+      const { profile: data } = await res.json();
+      if (!data) return null;
+      const mapped = { company: data.company||"", contact: data.contact||"", address: data.address||"", city: data.city||"", country: data.country||"", zip: data.zip||"", vat: data.vat||"", email: data.email||"" };
+      setBuyer(mapped);
+      return mapped;
+    } catch (e) {
+      logError("loadProfile", e.message || e);
+      return null;
+    }
   };
 
   const loadOrders = async () => {
-    const { data: orders } = await supabase.from("orders").select("*").order("created_at", { ascending: false });
-    if (!orders) return;
-    const { data: notes } = await supabase.from("order_notes").select("*").order("created_at", { ascending: true });
-    const enriched = orders.map(o => ({
-      id: o.id,
-      date: o.created_at,
-      buyer: { company: o.buyer_company, contact: o.buyer_contact, address: o.buyer_address, city: o.buyer_city, country: o.buyer_country, zip: o.buyer_zip, vat: o.buyer_vat, email: o.buyer_email },
-      lines: o.lines || [],
-      totalWSP: Number(o.total_wsp),
-      vatInfo: { rate: Number(o.vat_rate), label: o.vat_label, note: o.vat_note },
-      vatAmount: Number(o.vat_amount),
-      shipping: Number(o.shipping_amount || o.shipping || 0),
-      totalWithVat: Number(o.total_with_vat),
-      depositAmount: Number(o.deposit_amount),
-      balanceAmount: Number(o.balance_amount),
-      statuses: {
-        deposit_invoiced: o.status_deposit_invoiced,
-        deposit_paid: o.status_deposit_paid,
-        packed: o.status_packed,
-        balance_invoiced: o.status_balance_invoiced,
-        balance_paid: o.status_balance_paid,
-        shipped: o.status_shipped,
-        received: o.status_received,
-      },
-      userEmail: o.buyer_email,
-      userId: o.user_id,
-      cancelled: o.cancelled,
-      promoCode: o.promo_code || null,
-      promoLabel: o.promo_label || null,
-      notes: (notes || []).filter(n => n.order_id === o.id).map(n => ({ text: n.text, author: n.author, date: n.created_at, isAdmin: n.is_admin })),
-    }));
-    setAllOrders(enriched);
+    try {
+      const res = await fetch("/api/orders");
+      if (!res.ok) return;
+      const { orders } = await res.json();
+      setAllOrders(orders || []);
+    } catch (e) {
+      logError("loadOrders", e.message || e);
+    }
   };
 
   const saveProfile = async () => {
-    if (!session?.user) return;
-    const { error } = await supabase.from("buyer_profiles").upsert({
-      user_id: session.user.id,
-      company: buyer.company, contact: buyer.contact, address: buyer.address,
-      city: buyer.city, country: buyer.country, zip: buyer.zip, vat: buyer.vat, email: buyer.email,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "user_id" });
-    if (error) logError("saveProfile", error.message || error);
+    if (!session) return;
+    try {
+      const res = await fetch("/api/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buyer) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      logError("saveProfile", e.message || e);
+    }
   };
 
+  // Buyers are passwordless: register/sign-in both end at the same "enter
+  // the code we emailed you" screen.
   const handleRegister = async () => {
     setAuthError("");
-    if (!authForm.company || !authForm.email || !authForm.password) { setAuthError("All fields are required"); return; }
-    if (authForm.password.length < 6) { setAuthError("Password must be at least 6 characters"); return; }
-    const { data, error } = await supabase.auth.signUp({
-      email: authForm.email,
-      password: authForm.password,
-      options: { data: { company: authForm.company } }
-    });
-    if (error) { logError("handleRegister", error.message); setAuthError(error.message); return; }
-    if (data.user) {
-      await supabase.from("buyer_profiles").upsert({ user_id: data.user.id, company: authForm.company, email: authForm.email });
+    if (!authForm.company || !authForm.email) { setAuthError("Company name and email are required"); return; }
+    try {
+      const res = await fetch("/api/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: authForm.email, company: authForm.company }) });
+      const data = await res.json();
+      if (!res.ok) { logError("handleRegister", data.error); setAuthError(data.error || "Registration failed"); return; }
       setBuyer(b => ({...b, company: authForm.company, email: authForm.email}));
+      setOtpEmail(data.email);
+      setView("otp");
+      showToast("Code sent — check your email");
+    } catch (e) {
+      logError("handleRegister", e.message || e);
+      setAuthError("Registration failed");
     }
-    setAuthForm({company:"",email:"",password:""}); setView("catalog");
-    showToast("Account created successfully");
   };
 
-  const handleLogin = async () => {
+  const handleRequestOtp = async () => {
     setAuthError("");
-    if (!authForm.email || !authForm.password) { setAuthError("Email and password required"); return; }
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: authForm.email,
-      password: authForm.password,
-    });
-    if (error) { setAuthError(error.message); return; }
-    setAuthForm({company:"",email:"",password:""}); setView("catalog");
-    showToast("Welcome back, " + (data.user?.user_metadata?.company || ""));
+    if (!authForm.email) { setAuthError("Enter your email address"); return; }
+    try {
+      const res = await fetch("/api/auth/request-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: authForm.email }) });
+      const data = await res.json();
+      if (!res.ok) { setAuthError(data.error || "Something went wrong"); return; }
+      setOtpEmail(data.email);
+      setView("otp");
+      showToast("Code sent — check your email");
+    } catch (e) {
+      setAuthError("Something went wrong");
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    setAuthError("");
+    if (!otpCode || otpCode.trim().length !== 6) { setAuthError("Enter the 6-digit code"); return; }
+    try {
+      const res = await fetch("/api/auth/verify-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: otpEmail, code: otpCode.trim() }) });
+      const data = await res.json();
+      if (!res.ok) { setAuthError(data.error || "Verification failed"); return; }
+      setSession({ id: data.id, email: data.email, role: data.role });
+      setOtpCode(""); setOtpEmail(""); setAuthForm({company:"",email:""});
+      const profile = await loadProfile();
+      await loadOrders();
+      setView(data.role === "admin" ? "admin" : "catalog");
+      showToast("Welcome" + (profile?.company ? ", " + profile.company : ""));
+    } catch (e) {
+      setAuthError("Verification failed");
+    }
   };
 
   const handleLogout = async () => {
     await saveProfile();
-    await supabase.auth.signOut();
-    setSession(null); setIsAdmin(false); setQuantities({}); setView("landing");
+    try { await fetch("/api/auth/logout", { method: "POST" }); } catch (e) {}
+    setSession(null); setQuantities({}); setView("landing");
     setBuyer({company:"",address:"",city:"",country:"",zip:"",vat:"",email:"",contact:""});
     setOrderNumber(generateOrderNumber());
     setPromoCode(""); setAppliedPromo(null);
-  };
-
-  const handleResetPassword = async () => {
-    setAuthError("");
-    if (!authForm.email) { setAuthError("Enter your email address"); return; }
-    const { error } = await supabase.auth.resetPasswordForEmail(authForm.email, {
-      redirectTo: window.location.origin,
-    });
-    if (error) { setAuthError(error.message); return; }
-    setView("reset_sent");
-  };
-
-  const handleAdminLogin = () => {
-    if (adminPw === ADMIN_PASSWORD) { setIsAdmin(true); setAdminError(""); setView("admin"); loadOrders(); }
-    else setAdminError("Incorrect password");
   };
 
   const applyPromoCode = () => {
@@ -627,229 +483,67 @@ export default function DeeAprilB2B() {
     setPromoCodeInput("");
   };
 
-  // Feature 1: e-conomic Integration
-  const syncToEconomic = async (orderData) => {
-    if (!ECONOMIC_APP_SECRET) return; // Skip if not configured
-
-    try {
-      const headers = {
-        "X-AppSecretToken": ECONOMIC_APP_SECRET,
-        "X-AgreementGrantToken": ECONOMIC_AGREEMENT,
-        "Content-Type": "application/json"
-      };
-
-      // 1. Search for existing customer by company name
-      const custSearchUrl = `${ECONOMIC_API}/customers?filter=name$eq:${encodeURIComponent(orderData.buyer.company)}`;
-      const custSearchRes = await fetch(custSearchUrl, { method: "GET", headers });
-      const custSearchData = await custSearchRes.json();
-
-      let customerId;
-      if (custSearchData.collection && custSearchData.collection.length > 0) {
-        customerId = custSearchData.collection[0].customerNumber;
-      } else {
-        // 2. Create new customer
-        const custPayload = {
-          name: orderData.buyer.company,
-          address: orderData.buyer.address || "",
-          city: orderData.buyer.city || "",
-          zipCode: orderData.buyer.zip || "",
-          country: orderData.buyer.country || "",
-          email: orderData.buyer.email || "",
-          currency: "EUR",
-          vatZone: { vatZoneNumber: 1 },
-          customerGroup: { customerGroupNumber: 1 },
-          paymentTerms: { paymentTermsNumber: 1 }
-        };
-        const custRes = await fetch(`${ECONOMIC_API}/customers`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(custPayload)
-        });
-        const custData = await custRes.json();
-        customerId = custData.customerNumber;
-      }
-
-      // 3. Create draft invoice
-      const invPayload = {
-        customer: { customerNumber: customerId },
-        date: new Date().toISOString().split("T")[0],
-        currency: "EUR",
-        paymentTerms: { paymentTermsNumber: 1 },
-        layout: { layoutNumber: 1 },
-        lines: orderData.lines.map(line => ({
-          description: `${line.product} ${line.size}`,
-          quantity: line.qty,
-          unitNetPrice: line.unitPrice
-        }))
-      };
-
-      await fetch(`${ECONOMIC_API}/invoices/drafts`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(invPayload)
-      });
-
-      console.log("e-conomic sync successful for order", orderData.id);
-    } catch (err) {
-      logError("syncToEconomic", err.message || err);
-      // Don't block order flow on e-conomic errors
-    }
-  };
-
   const handleSubmitOrder = async () => {
     if (submitting) return;
     setSubmitting(true);
     try {
-    // Validate stock availability
-    const stockIssues = [];
-    orderLines.forEach(line => {
-      const stock = getStock(line.sku);
-      if (stock !== null && line.qty > stock) {
-        stockIssues.push(`${line.product} ${line.size}: requested ${line.qty}, available ${stock}`);
-      }
-    });
-    if (stockIssues.length > 0) {
-      showToast("Insufficient stock: " + stockIssues[0]);
-      return;
-    }
-
-    await saveProfile();
-    const { error } = await supabase.from("orders").insert({
-      id: orderNumber,
-      user_id: session?.user?.id,
-      buyer_company: buyer.company, buyer_contact: buyer.contact, buyer_address: buyer.address,
-      buyer_city: buyer.city, buyer_country: buyer.country, buyer_zip: buyer.zip,
-      buyer_vat: buyer.vat, buyer_email: buyer.email,
-      lines: orderLines,
-      total_wsp: totalWSP, vat_rate: vatInfo.rate, vat_label: vatInfo.label, vat_note: vatInfo.note,
-      vat_amount: vatAmount, shipping_amount: shippingAmount, total_with_vat: totalWithVat,
-      deposit_amount: depositAmount, balance_amount: Math.round((totalBeforeShipping - depositAmount) * 100) / 100,
-      promo_code: appliedPromo?.code || null,
-      promo_label: appliedPromo?.label || null,
-    });
-    if (error) { logError("handleSubmitOrder", error.message || error); showToast("Error: " + error.message); return; }
-
-    // Sync to e-conomic after successful order insertion
-    if (ECONOMIC_APP_SECRET) {
-      await syncToEconomic({
-        id: orderNumber,
-        buyer: buyer,
-        lines: orderLines
+      const items = orderLines.map(l => ({ sku: l.sku, qty: l.qty }));
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items, buyer, promoCode: appliedPromo?.code || null }),
       });
+      const data = await res.json();
+      if (!res.ok) { logError("handleSubmitOrder", data.error); showToast(data.error || "Failed to place order"); return; }
+
+      await loadOrders();
+      await loadInventory();
+      const placedOrderId = data.order.id;
+      setViewingOrderId(placedOrderId);
+      setInvoiceSource("buyer");
+      setView("invoice");
+      showToast("Order placed — " + placedOrderId);
+      setQuantities({});
+      setAppliedPromo(null);
+      setPromoCode("");
+      setOrderNumber(generateOrderNumber());
+    } catch (e) {
+      logError("handleSubmitOrder", e.message || e);
+      showToast("Failed to place order");
+    } finally {
+      setSubmitting(false);
     }
-
-    // Email notifications: buyer confirmation + admin alert (fire-and-forget, non-blocking)
-    const emailData = {
-      orderId: orderNumber, buyerCompany: buyer.company, buyerContact: buyer.contact,
-      buyerEmail: buyer.email, buyerCountry: buyer.country, buyerCity: buyer.city, buyerVat: buyer.vat,
-      lines: orderLines, totalWSP, vatAmount, vatLabel: vatInfo.label,
-      shipping: shippingAmount, totalWithVat, depositAmount,
-      balanceAmount: Math.round((totalBeforeShipping - depositAmount) * 100) / 100,
-    };
-    const pdfOrder = {
-      orderId: orderNumber, buyerCompany: buyer.company, buyerContact: buyer.contact,
-      buyerAddress: buyer.address, buyerCity: buyer.city, buyerCountry: buyer.country,
-      buyerZip: buyer.zip, buyerVat: buyer.vat, buyerEmail: buyer.email,
-      lines: orderLines, totalWSP, vatAmount, vatLabel: vatInfo.label, vatNote: vatInfo.note,
-      shipping: shippingAmount, totalWithVat, depositAmount,
-      depositInvoiceTotal: depositInvoiceTotal,
-      balanceAmount: Math.round((totalBeforeShipping - depositAmount) * 100) / 100,
-    };
-    sendNotificationWithPDF("order_placed_buyer", emailData, pdfOrder, "deposit", logError).catch(() => {});
-    sendNotification("order_placed_admin", emailData, logError).catch(() => {});
-
-    // Deduct stock from inventory
-    for (const line of orderLines) {
-      const currentStock = inventory[line.sku];
-      if (currentStock !== undefined && currentStock !== null) {
-        const newStock = Math.max(0, currentStock - line.qty);
-        await supabase.from("inventory").update({ stock: newStock }).eq("sku", line.sku);
-        setInventory(prev => ({ ...prev, [line.sku]: newStock }));
-      }
-    }
-
-    await loadOrders();
-    const placedOrderNumber = orderNumber;
-    setViewingOrderId(placedOrderNumber);
-    setInvoiceSource("buyer");
-    setView("invoice");
-    showToast("Order placed — " + placedOrderNumber);
-    setQuantities({});
-    setAppliedPromo(null);
-    setPromoCode("");
-    setOrderNumber(generateOrderNumber());
-    } finally { setSubmitting(false); }
   };
 
   const handleViewInvoice = (orderId, source, invType = "deposit") => { setViewingOrderId(orderId); setInvoiceSource(source); setInvoiceViewType(invType); setView("invoice"); };
 
-  // Status key → email template mapping (only send when toggling ON)
-  const STATUS_EMAIL_MAP = {
-    deposit_invoiced: "deposit_invoiced",
-    deposit_paid: "deposit_paid",
-    packed: "packed",
-    balance_invoiced: "balance_invoiced",
-    balance_paid: "balance_paid",
-    shipped: "shipped",
-    received: "received",
-  };
-
+  // Status toggling, email dispatch, and PDF generation are all handled
+  // server-side now (app/api/orders/[id]/status/route.js) — this just
+  // reflects the confirmed new statuses back into local state.
   const toggleOrderStatus = async (orderId, key) => {
-    const order = allOrders.find(o => o.id === orderId);
-    if (!order) return;
-    const dbKey = "status_" + key;
-    const newValue = !order.statuses[key];
-    const { error } = await supabase.from("orders").update({ [dbKey]: newValue }).eq("id", orderId);
-    if (error) { logError("toggleOrderStatus:" + key, error.message || error); showToast("Failed to update status — " + error.message); return; }
-    setAllOrders(prev => prev.map(o => o.id === orderId ? {...o, statuses:{...o.statuses,[key]:newValue}} : o));
-
-    // Send buyer notification when status is toggled ON
-    if (newValue && STATUS_EMAIL_MAP[key]) {
-      const emailData = {
-        orderId, buyerEmail: order.buyer.email || order.userEmail,
-        buyerCompany: order.buyer.company, buyerContact: order.buyer.contact,
-        buyerCity: order.buyer.city, buyerCountry: order.buyer.country,
-        totalWithVat: order.totalWithVat, depositAmount: order.depositAmount,
-        balanceAmount: order.balanceAmount,
-      };
-
-      // For invoice statuses, generate PDF and attach
-      if (key === "deposit_invoiced") {
-        const pdfOrder = {
-          orderId, ...order.buyer, buyerCompany: order.buyer.company,
-          buyerContact: order.buyer.contact, buyerAddress: order.buyer.address,
-          buyerCity: order.buyer.city, buyerCountry: order.buyer.country,
-          buyerZip: order.buyer.zip, buyerVat: order.buyer.vat, buyerEmail: order.buyer.email,
-          lines: order.lines, totalWSP: order.totalWSP, vatAmount: order.vatAmount,
-          vatLabel: order.vatInfo?.label, vatNote: order.vatInfo?.note,
-          shipping: order.shipping, totalWithVat: order.totalWithVat,
-          depositAmount: order.depositAmount, depositInvoiceTotal: order.depositAmount + (order.shipping || 0),
-          balanceAmount: order.balanceAmount, date: order.date,
-        };
-        sendNotificationWithPDF("deposit_invoiced", emailData, pdfOrder, "deposit", logError);
-      } else if (key === "balance_invoiced") {
-        const pdfOrder = {
-          orderId, ...order.buyer, buyerCompany: order.buyer.company,
-          buyerContact: order.buyer.contact, buyerAddress: order.buyer.address,
-          buyerCity: order.buyer.city, buyerCountry: order.buyer.country,
-          buyerZip: order.buyer.zip, buyerVat: order.buyer.vat, buyerEmail: order.buyer.email,
-          lines: order.lines, totalWSP: order.totalWSP, vatAmount: order.vatAmount,
-          vatLabel: order.vatInfo?.label, vatNote: order.vatInfo?.note,
-          shipping: order.shipping, totalWithVat: order.totalWithVat,
-          depositAmount: order.depositAmount, balanceAmount: order.balanceAmount, date: order.date,
-        };
-        sendNotificationWithPDF("balance_invoiced", emailData, pdfOrder, "balance", logError);
-      } else {
-        sendNotification(STATUS_EMAIL_MAP[key], emailData, logError);
-      }
+    try {
+      const res = await fetch(`/api/orders/${orderId}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key }) });
+      const data = await res.json();
+      if (!res.ok) { logError("toggleOrderStatus:" + key, data.error); showToast("Failed to update status — " + (data.error || "")); return; }
+      setAllOrders(prev => prev.map(o => o.id === orderId ? {...o, statuses: data.statuses} : o));
+    } catch (e) {
+      logError("toggleOrderStatus:" + key, e.message || e);
+      showToast("Failed to update status");
     }
   };
 
   const restoreOrder = async (orderId) => {
-    const { error } = await supabase.from("orders").update({ cancelled: false }).eq("id", orderId);
-    if (error) { logError("restoreOrder", error.message || error); showToast("Failed to restore — " + error.message); return; }
-    setAllOrders(prev => prev.map(o => o.id === orderId ? {...o, cancelled:false} : o));
-    showToast("Order " + orderId + " restored");
+    try {
+      const res = await fetch(`/api/orders/${orderId}/restore`, { method: "PATCH" });
+      const data = await res.json();
+      if (!res.ok) { logError("restoreOrder", data.error); showToast("Failed to restore — " + (data.error || "")); return; }
+      setAllOrders(prev => prev.map(o => o.id === orderId ? {...o, cancelled:false} : o));
+      await loadInventory();
+      showToast("Order " + orderId + " restored");
+    } catch (e) {
+      logError("restoreOrder", e.message || e);
+      showToast("Failed to restore order");
+    }
   };
 
   const deleteOrder = (orderId) => {
@@ -859,15 +553,25 @@ export default function DeeAprilB2B() {
       confirmLabel: "Delete",
       danger: true,
       onConfirm: async () => {
-        const { error } = await supabase.from("orders").delete().eq("id", orderId);
-        if (error) { logError("deleteOrder", error.message || error); showToast("Failed to delete — " + error.message); closeConfirm(); return; }
-        setAllOrders(prev => prev.filter(o => o.id !== orderId));
-        closeConfirm();
-        showToast("Order " + orderId + " deleted");
+        try {
+          const res = await fetch(`/api/orders/${orderId}`, { method: "DELETE" });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) { logError("deleteOrder", data.error); showToast("Failed to delete — " + (data.error || "")); closeConfirm(); return; }
+          setAllOrders(prev => prev.filter(o => o.id !== orderId));
+          closeConfirm();
+          showToast("Order " + orderId + " deleted");
+        } catch (e) {
+          logError("deleteOrder", e.message || e);
+          showToast("Failed to delete order");
+          closeConfirm();
+        }
       }
     });
   };
 
+  // Cancel now refunds inventory server-side (app/api/orders/[id]/cancel/route.js)
+  // and sends the buyer/admin emails itself — nothing left to do here but
+  // reflect the confirmed result into local state.
   const cancelOrder = (orderId, fromAdmin) => {
     askConfirm({
       title: "Cancel Order",
@@ -877,23 +581,18 @@ export default function DeeAprilB2B() {
       confirmLabel: "Cancel Order",
       danger: true,
       onConfirm: async () => {
-        const { error } = await supabase.from("orders").update({ cancelled: true }).eq("id", orderId);
-        if (error) { logError("cancelOrder", error.message || error); showToast("Failed to cancel — " + error.message); closeConfirm(); return; }
-        const order = allOrders.find(o => o.id === orderId);
-        setAllOrders(prev => prev.map(o => o.id === orderId ? {...o, cancelled:true} : o));
-        closeConfirm();
-        showToast("Order " + orderId + " cancelled");
-
-        // Email notifications on cancel
-        if (order) {
-          const cancelData = {
-            orderId, buyerCompany: order.buyer.company, buyerEmail: order.buyer.email || order.userEmail,
-            buyerContact: order.buyer.contact, totalWithVat: order.totalWithVat,
-          };
-          // Always notify buyer
-          sendNotification("order_cancelled_buyer", cancelData, logError);
-          // Notify admin only when buyer cancels (not when admin cancels themselves)
-          if (!fromAdmin) sendNotification("order_cancelled_admin", cancelData, logError);
+        try {
+          const res = await fetch(`/api/orders/${orderId}/cancel`, { method: "PATCH" });
+          const data = await res.json();
+          if (!res.ok) { logError("cancelOrder", data.error); showToast("Failed to cancel — " + (data.error || "")); closeConfirm(); return; }
+          setAllOrders(prev => prev.map(o => o.id === orderId ? {...o, cancelled:true} : o));
+          await loadInventory();
+          closeConfirm();
+          showToast("Order " + orderId + " cancelled");
+        } catch (e) {
+          logError("cancelOrder", e.message || e);
+          showToast("Failed to cancel order");
+          closeConfirm();
         }
       }
     });
@@ -905,72 +604,28 @@ export default function DeeAprilB2B() {
     return !s.deposit_paid && !s.packed && !s.balance_invoiced && !s.balance_paid && !s.shipped && !s.received;
   };
 
-  // Feature 2: Handle order updates
+  // Feature 2: Handle order updates — stock validation, price re-derivation,
+  // and the stock delta adjustment all happen server-side now
+  // (app/api/orders/[id]/route.js PATCH).
   const handleUpdateOrder = async (orderId) => {
-    // Check that all quantities are not zero
     const totalQty = Object.values(editQtys).reduce((sum, q) => sum + (q || 0), 0);
     if (totalQty === 0) {
       showToast("At least one item must have quantity > 0");
       return;
     }
-
-    // Validate stock
-    const stockIssues = [];
-    Object.entries(editQtys).forEach(([sku, qty]) => {
-      if (qty > 0) {
-        const stock = getStock(sku);
-        if (stock !== null && qty > stock) {
-          const prod = PRODUCTS.flatMap(p => p.variants.map(v => ({...v, product: p.name}))).find(v => v.sku === sku);
-          stockIssues.push(`${prod?.product || sku} ${prod?.size || ""}: requested ${qty}, available ${stock}`);
-        }
-      }
-    });
-    if (stockIssues.length > 0) {
-      showToast("Insufficient stock: " + stockIssues[0]);
-      return;
+    try {
+      const res = await fetch(`/api/orders/${orderId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ qtyUpdates: editQtys }) });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error || "Error updating order"); return; }
+      setEditingOrderId(null);
+      setEditQtys({});
+      await loadOrders();
+      await loadInventory();
+      showToast("Order updated");
+    } catch (e) {
+      logError("handleUpdateOrder", e.message || e);
+      showToast("Error updating order");
     }
-
-    // Recalculate order totals based on new quantities
-    const updatedLines = [];
-    let newTotalWSP = 0;
-    const order = allOrders.find(o => o.id === orderId);
-
-    PRODUCTS.forEach((p) => p.variants.forEach((v) => {
-      const newQty = editQtys[v.sku] || 0;
-      if (newQty > 0) {
-        const unitPrice = order.lines.find(l => l.sku === v.sku)?.unitPrice || v.wsp;
-        updatedLines.push({ product: p.name, size: v.size, sku: v.sku, ean: v.ean, qty: newQty, unitPrice, total: newQty * unitPrice });
-        newTotalWSP += newQty * unitPrice;
-      }
-    }));
-
-    const newVatAmount = Math.round(newTotalWSP * order.vatInfo.rate * 100) / 100;
-    const newTotalBeforeShipping = newTotalWSP + newVatAmount;
-    const newShippingAmount = updatedLines.reduce((sum, l) => sum + l.qty, 0) > 0 ? SHIPPING_FLAT : 0;
-    const newTotalWithVat = newTotalBeforeShipping + newShippingAmount;
-    const newDepositAmount = Math.round(newTotalBeforeShipping * 0.3 * 100) / 100;
-    const newBalanceAmount = Math.round((newTotalBeforeShipping - newDepositAmount) * 100) / 100;
-
-    const { error } = await supabase.from("orders").update({
-      lines: updatedLines,
-      total_wsp: newTotalWSP,
-      vat_amount: newVatAmount,
-      shipping_amount: newShippingAmount,
-      total_with_vat: newTotalWithVat,
-      deposit_amount: newDepositAmount,
-      balance_amount: newBalanceAmount
-    }).eq("id", orderId);
-
-    if (error) {
-      logError("handleUpdateOrder", error.message || error);
-      showToast("Error updating order: " + error.message);
-      return;
-    }
-
-    setEditingOrderId(null);
-    setEditQtys({});
-    await loadOrders();
-    showToast("Order updated");
   };
 
   const repeatOrder = (order) => {
@@ -987,18 +642,27 @@ export default function DeeAprilB2B() {
     showToast("Order duplicated — review and confirm");
   };
 
-  const addNote = async (orderId, isAdminView) => {
+  // isAdminView is no longer trusted for authorship — the server derives it
+  // from the verified session role — the param is kept only so existing
+  // call sites (NoteSection) don't need to change.
+  const addNote = async (orderId) => {
     const text = (noteInputs[orderId] || "").trim();
     if (!text) return;
-    const author = isAdminView ? "Admin" : (currentUser?.company || "Buyer");
-    await supabase.from("order_notes").insert({ order_id: orderId, text, author, is_admin: isAdminView });
-    setAllOrders(prev => prev.map(o => o.id === orderId ? {...o, notes: [...(o.notes||[]), { text, author, date: new Date().toISOString(), isAdmin: isAdminView }]} : o));
-    setNoteInputs(n => ({...n, [orderId]: ""}));
-    showToast("Note added");
+    try {
+      const res = await fetch(`/api/orders/${orderId}/notes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error || "Failed to add note"); return; }
+      setAllOrders(prev => prev.map(o => o.id === orderId ? {...o, notes: [...(o.notes||[]), data.note]} : o));
+      setNoteInputs(n => ({...n, [orderId]: ""}));
+      showToast("Note added");
+    } catch (e) {
+      logError("addNote", e.message || e);
+      showToast("Failed to add note");
+    }
   };
 
   const exportCSV = () => {
-    const rows = [["Order ID","Date","Company","Email","Country","VAT Number","Items","Subtotal","VAT","Shipping","Total","Deposit","Status","Promo Code","Cancelled"]];
+    const rows = [["Order ID","Date","Company","Email","Country","VAT Number","Items","Subtotal","VAT","Shipping","Total","Shipping Invoice","Status","Promo Code","Cancelled"]];
     allOrders.forEach(o => {
       const items = o.lines.map(l => `${l.product} ${l.size} x${l.qty}`).join("; ");
       const statusStr = ORDER_STATUSES.filter(s => o.statuses[s.key]).map(s => s.label).join(", ");
@@ -1012,62 +676,101 @@ export default function DeeAprilB2B() {
     showToast("CSV exported");
   };
 
+  // Sends just the orderId — the server re-fetches the order and derives
+  // every field itself, rather than trusting a client-built payload.
   const handlePrint = async () => {
-    const inv = allOrders.find(o => o.id === viewingOrderId) || {buyer,totalWSP,vatInfo,vatAmount,shipping:shippingAmount,totalWithVat,depositAmount,balanceAmount:totalWithVat-depositAmount,lines:orderLines,cancelled:false};
     const invType = invoiceViewType || "deposit";
-    const data = {
-      orderId: viewingOrderId || orderNumber,
-      buyerCompany: inv.buyer?.company, buyerContact: inv.buyer?.contact,
-      buyerAddress: inv.buyer?.address, buyerCity: inv.buyer?.city,
-      buyerCountry: inv.buyer?.country, buyerZip: inv.buyer?.zip,
-      buyerVat: inv.buyer?.vat, buyerEmail: inv.buyer?.email,
-      lines: inv.lines, totalWSP: inv.totalWSP, vatAmount: inv.vatAmount,
-      vatLabel: inv.vatInfo?.label, vatNote: inv.vatInfo?.note,
-      shipping: inv.shipping, totalWithVat: inv.totalWithVat,
-      depositAmount: inv.depositAmount, balanceAmount: inv.balanceAmount || (inv.totalWithVat - inv.depositAmount),
-    };
+    const orderId = viewingOrderId || orderNumber;
     try {
-      const res = await fetch("/api/generate-invoice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ order: data, type: invType, format: "download" }) });
+      const res = await fetch("/api/generate-invoice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId, type: invType, format: "download" }) });
       if (!res.ok) { logError("handlePrint", `HTTP ${res.status}`); showToast("PDF generation failed"); return; }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = `${data.orderId}-${invType}-invoice.pdf`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+      a.href = url; a.download = `${orderId}-${invType}-invoice.pdf`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
     } catch (e) { logError("handlePrint", e.message || e); showToast("Failed to generate PDF"); }
   };
 
   const savePromoCode = async () => {
     if (!adminPromoForm.code.trim()) { showToast("Code required"); return; }
     if (!adminPromoForm.label.trim()) { showToast("Label required"); return; }
-    const prices = {};
-    let allFilled = true;
-    ["100 ML", "50 ML", "20 ML", "2 ML", "KIT"].forEach(size => {
-      const p = parseFloat(adminPromoForm.prices[size]);
-      if (isNaN(p) || p < 0) allFilled = false;
-      else prices[size] = p;
-    });
-    if (!allFilled) { showToast("All prices must be valid numbers"); return; }
-    const newPromo = { code: adminPromoForm.code.toUpperCase(), label: adminPromoForm.label, discount_type: "fixed_prices", prices };
     try {
-      await supabase.from("promo_codes").insert(newPromo);
+      const res = await fetch("/api/promo-codes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: adminPromoForm.code, label: adminPromoForm.label, prices: adminPromoForm.prices }) });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error || "Failed to save promo code"); return; }
+      setAdminPromoForm({ code: "", label: "", prices: { "100 ML": "", "50 ML": "", "20 ML": "", "2 ML": "", "KIT": "" } });
+      await loadPromoCodes();
+      showToast("Promo code saved");
     } catch (e) {
-      setPromoCodes(prev => [...prev, newPromo]);
+      logError("savePromoCode", e.message || e);
+      showToast("Failed to save promo code");
     }
-    setAdminPromoForm({ code: "", label: "", prices: { "100 ML": "", "50 ML": "", "20 ML": "", "2 ML": "", "KIT": "" } });
-    await loadPromoCodes();
-    showToast("Promo code saved");
   };
 
   const deletePromoCode = async (code) => {
     try {
-      await supabase.from("promo_codes").delete().eq("code", code);
-    } catch (e) {}
-    setPromoCodes(prev => prev.filter(p => p.code !== code));
-    showToast("Promo code deleted");
+      const res = await fetch(`/api/promo-codes?code=${encodeURIComponent(code)}`, { method: "DELETE" });
+      if (!res.ok) { const data = await res.json().catch(() => ({})); showToast(data.error || "Failed to delete promo code"); return; }
+      setPromoCodes(prev => prev.filter(p => p.code !== code));
+      showToast("Promo code deleted");
+    } catch (e) {
+      logError("deletePromoCode", e.message || e);
+      showToast("Failed to delete promo code");
+    }
+  };
+
+  const loadAdmins = async () => {
+    try {
+      const res = await fetch("/api/admin/admins");
+      if (!res.ok) return;
+      const { admins: list } = await res.json();
+      setAdmins(list || []);
+    } catch (e) {
+      logError("loadAdmins", e.message || e);
+    }
+  };
+
+  const addAdmin = async () => {
+    if (!adminManageForm.email.trim()) { showToast("Email required"); return; }
+    try {
+      const res = await fetch("/api/admin/admins", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(adminManageForm) });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error || "Failed to add admin"); return; }
+      setAdminManageForm({ email: "", company: "" });
+      await loadAdmins();
+      showToast("Admin added — welcome email sent");
+    } catch (e) {
+      logError("addAdmin", e.message || e);
+      showToast("Failed to add admin");
+    }
+  };
+
+  const removeAdmin = (id) => {
+    askConfirm({
+      title: "Remove Admin Access",
+      message: "This account will lose admin access and become a regular buyer account.",
+      confirmLabel: "Remove",
+      danger: true,
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/admin/admins/${id}`, { method: "DELETE" });
+          const data = await res.json();
+          if (!res.ok) { showToast(data.error || "Failed to remove admin"); closeConfirm(); return; }
+          setAdmins(prev => prev.filter(a => a.id !== id));
+          closeConfirm();
+          showToast("Admin access removed");
+        } catch (e) {
+          logError("removeAdmin", e.message || e);
+          showToast("Failed to remove admin");
+          closeConfirm();
+        }
+      }
+    });
   };
 
   useEffect(() => {
     if (view === "admin" || view === "myorders") loadOrders();
+    if (view === "admin") loadAdmins();
     if (view === "catalog") loadInventory();
   }, [view]);
 
@@ -1087,6 +790,10 @@ export default function DeeAprilB2B() {
       <button onClick={()=>setView("myorders")} style={{background:"none",border:"none",fontSize:11,color: "#888",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.06em",textDecoration:view==="myorders"?"underline":"none",textUnderlineOffset:3}}>My Orders</button>
       <span style={{fontSize:10,color: "#999"}}>|</span>
       <button onClick={()=>setView("profile")} style={{background:"none",border:"none",fontSize:11,color: "#888",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.06em",textDecoration:view==="profile"?"underline":"none",textUnderlineOffset:3}}>Profile</button>
+      {session?.role === "admin" && <>
+        <span style={{fontSize:10,color: "#999"}}>|</span>
+        <button onClick={()=>setView("admin")} style={{background:"none",border:"none",fontSize:11,color: "#888",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.06em"}}>Admin Panel</button>
+      </>}
       <span style={{fontSize:10,color: "#999"}}>|</span>
       <span style={{fontSize:11,color: "#888"}}>{currentUser?.company}</span>
       <button onClick={handleLogout} style={{background:"none",border: "1px solid #2a2a2a",padding:"6px 14px",borderRadius:8,fontSize:10,color: "#666",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Sign Out</button>
@@ -1103,7 +810,7 @@ export default function DeeAprilB2B() {
   );
 
   if (view === "landing") return (
-    <div style={{...base,background:"linear-gradient(180deg,rgba(0,0,0,0.45) 0%,rgba(0,0,0,0.3) 50%,rgba(0,0,0,0.65) 100%)",backgroundImage:`linear-gradient(180deg,rgba(0,0,0,0.45) 0%,rgba(0,0,0,0.3) 50%,rgba(0,0,0,0.65) 100%), url("https://gsojazybzodouvdmqkvg.supabase.co/storage/v1/object/sign/DA%20Assets/cover.png?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV80ZTU5ZWYwMS1lNDhiLTQ2ZTAtYjVmOS0yMTU4NDRhM2EzZGEiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJEQSBBc3NldHMvY292ZXIucG5nIiwiaWF0IjoxNzc0NTcxNzg4LCJleHAiOjE4MDYxMDc3ODh9.ErG-m6CDQLcINabcW3oOIle3uPWr6JFqWeHsv6wVNxw")`,backgroundSize:"cover",backgroundPosition:"center top",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",padding:"40px 20px"}}>
+    <div style={{...base,background:"#000",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",padding:"40px 20px"}}>
       <div style={{textAlign:"center",maxWidth:520,width:"100%"}}>
         <div style={{animation:"scaleIn 0.8s cubic-bezier(0.23,1,0.32,1) 0s both",display:"flex",justifyContent:"center"}}>
           <Logo color="#fff" style={{ height: 36 }} />
@@ -1111,9 +818,9 @@ export default function DeeAprilB2B() {
         <FadeIn delay={0.5} style={{textAlign:"center"}}>
           <div style={{fontSize:14,color:"rgba(255,255,255,0.7)",lineHeight:1.8,marginBottom:48,marginTop:40}}>
             <div style={{fontWeight:600,color:"#fff",marginBottom:12,fontSize:15,letterSpacing:"0.04em"}}>B2B Wholesale Portal</div>
-            <div style={{marginBottom:16,maxWidth:420,margin:"0 auto 16px"}}>Browse the collection, place orders, and receive deposit invoices — all in one place.</div>
+            <div style={{marginBottom:16,maxWidth:420,margin:"0 auto 16px"}}>Browse the collection, place orders, and receive invoices — all in one place.</div>
             <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",lineHeight:1.8,maxWidth:420,margin:"0 auto"}}>
-              <span style={{fontWeight:500,color:"rgba(255,255,255,0.6)"}}>How it works:</span> Create an account, browse Chapter I at wholesale prices, select quantities and generate a 30% deposit invoice. We ship with the remaining 70% invoiced before dispatch.
+              <span style={{fontWeight:500,color:"rgba(255,255,255,0.6)"}}>How it works:</span> Create an account, browse Chapter I at wholesale prices, select quantities and place your order — a shipping invoice is generated first, with the full order invoiced before dispatch.
             </div>
           </div>
         </FadeIn>
@@ -1122,17 +829,24 @@ export default function DeeAprilB2B() {
           <button className="da-btn" onClick={()=>setView("login")} style={{width:"100%",background:"transparent",color:"#fff",border:"1px solid rgba(255,255,255,0.3)",padding:"16px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,animation:"slideUp 0.6s cubic-bezier(0.23,1,0.32,1) 0.3s both"}}>Sign In</button>
           <button className="da-btn" onClick={()=>setView("adminlogin")} style={{width:"100%",background:"transparent",color:"rgba(255,255,255,0.5)",border:"none",padding:"16px",borderRadius:12,fontSize:10,letterSpacing:"0.15em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,animation:"slideUp 0.6s cubic-bezier(0.23,1,0.32,1) 0.4s both"}}>Admin</button>
         </div>
+        <div style={{marginTop:40,display:"flex",justifyContent:"center",gap:20}}>
+          <a href="/privacy-policy" style={{fontSize:10,color:"rgba(255,255,255,0.3)",textDecoration:"none",letterSpacing:"0.06em"}}>Privacy Policy</a>
+          <a href="/eula" style={{fontSize:10,color:"rgba(255,255,255,0.3)",textDecoration:"none",letterSpacing:"0.06em"}}>Terms of Use</a>
+          <a href="/dpa" style={{fontSize:10,color:"rgba(255,255,255,0.3)",textDecoration:"none",letterSpacing:"0.06em"}}>DPA</a>
+        </div>
       </div>
     </div>
   );
 
-  if (view === "register") return <AuthScreen title="New Account" fields={[<div key="co"><label style={labelStyle}>Company Name *</label><input className="da-input" style={inputStyle} value={authForm.company} onChange={e=>setAuthForm({...authForm,company:e.target.value})} placeholder="Your company"/></div>,<div key="em"><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})} placeholder="name@company.com"/></div>,<div key="pw"><label style={labelStyle}>Password *</label><input className="da-input" style={inputStyle} type="password" value={authForm.password} onChange={e=>setAuthForm({...authForm,password:e.target.value})} placeholder="Min. 6 characters"/></div>]} onSubmit={handleRegister} submitLabel="Create Account" altText="Already have an account?" altAction={()=>setView("login")} altLabel="Sign In" authError={authError} onBack={()=>setView("landing")} />;
+  if (view === "register") return <AuthScreen title="New Account" fields={[<div key="co"><label style={labelStyle}>Company Name *</label><input className="da-input" style={inputStyle} value={authForm.company} onChange={e=>setAuthForm({...authForm,company:e.target.value})} placeholder="Your company"/></div>,<div key="em"><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})} placeholder="name@company.com"/></div>]} onSubmit={handleRegister} submitLabel="Create Account" altText="Already have an account?" altAction={()=>setView("login")} altLabel="Sign In" authError={authError} onBack={()=>setView("landing")} />;
 
-  if (view === "login") return <AuthScreen title="Sign In" fields={[<div key="em"><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})} placeholder="name@company.com"/></div>,<div key="pw"><label style={labelStyle}>Password *</label><input className="da-input" style={inputStyle} type="password" value={authForm.password} onChange={e=>setAuthForm({...authForm,password:e.target.value})} placeholder="Password"/></div>]} onSubmit={handleLogin} submitLabel="Sign In" altText="Need an account?" altAction={()=>setView("register")} altLabel="Create one" authError={authError} onBack={()=>setView("landing")} />;
+  if (view === "login") return <AuthScreen title="Sign In" fields={[<div key="em"><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})} placeholder="name@company.com"/></div>,<div key="msg" style={{fontSize:11,color: "#666",lineHeight:1.6}}>We'll email you a 6-digit code — no password needed.</div>]} onSubmit={handleRequestOtp} submitLabel="Send Code" altText="Need an account?" altAction={()=>setView("register")} altLabel="Create one" authError={authError} onBack={()=>setView("landing")} />;
 
-  if (view === "adminlogin") return <AuthScreen title="Admin Access" fields={[<div key="pw"><label style={labelStyle}>Admin Password</label><input className="da-input" style={inputStyle} type="password" value={adminPw} onChange={e=>setAdminPw(e.target.value)} placeholder="Password"/></div>]} onSubmit={handleAdminLogin} submitLabel="Enter Admin" adminError={adminError} onBack={()=>setView("landing")} />;
+  if (view === "otp") return <AuthScreen title="Enter Your Code" fields={[<div key="msg" style={{fontSize:12,color: "#888",textAlign:"center",lineHeight:1.7,marginBottom:4}}>We sent a 6-digit code to<br/><span style={{color:"#fff",fontWeight:500}}>{otpEmail}</span></div>,<div key="code"><label style={labelStyle}>Code *</label><input className="da-input" style={{...inputStyle,fontSize:22,letterSpacing:"0.3em",textAlign:"center"}} inputMode="numeric" maxLength={6} value={otpCode} onChange={e=>setOtpCode(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="000000"/></div>,<div key="resend" style={{textAlign:"center"}}><button onClick={handleRequestOtp} style={{background:"none",border:"none",fontSize:11,color: "#666",cursor:"pointer",fontFamily:FONT}}>Resend code</button></div>]} onSubmit={handleVerifyOtp} submitLabel="Verify & Sign In" authError={authError} onBack={()=>setView("landing")} />;
 
-  if (view === "reset_sent") return <AuthScreen title="Password Reset Sent" fields={[<div key="msg" style={{fontSize:12,color: "#888",textAlign:"center",lineHeight:1.8}}>Check your email for a password reset link. You can safely close this window.</div>]} submitLabel="Back to Login" onSubmit={()=>setView("login")} onBack={()=>setView("landing")} />;
+  if (view === "adminlogin") return <AuthScreen title="Admin Access" fields={[<div key="em"><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})} placeholder="name@company.com"/></div>,<div key="msg" style={{fontSize:11,color: "#666",lineHeight:1.6}}>We'll email you a 6-digit code — no password needed.</div>]} onSubmit={handleRequestOtp} submitLabel="Send Code" authError={authError} onBack={()=>setView("landing")} />;
+
+
 
   if (view === "profile") return (
     <div style={base}>
@@ -1275,10 +989,10 @@ export default function DeeAprilB2B() {
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:600,paddingTop:8,borderTop: "1px solid #333"}}><span>Total</span><span>{formatEUR(totalWithVat)}</span></div>
                 </div>
                 <div style={{marginTop:12,padding:"14px 0 0",borderTop:"2px solid #000"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><div><div style={{fontSize:10,textTransform:"uppercase",letterSpacing:"0.1em",color: "#666"}}>Deposit Invoice</div><div style={{fontSize:10,color: "#999",marginTop:2}}>30% advance + shipping</div></div><span style={{fontSize:20,fontWeight:600}}>{formatEUR(depositInvoiceTotal)}</span></div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><div><div style={{fontSize:10,textTransform:"uppercase",letterSpacing:"0.1em",color: "#666"}}>Shipping Invoice</div><div style={{fontSize:10,color: "#999",marginTop:2}}>Due now — full order invoiced separately</div></div><span style={{fontSize:20,fontWeight:600}}>{formatEUR(depositInvoiceTotal)}</span></div>
                 </div>
                 <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:20}}>
-                  <button className="da-btn" onClick={()=>{if(canSubmit&&!submitting){askConfirm({title:"Confirm Order",message:`Place order ${orderNumber} for ${formatEUR(totalWithVat)}? A 30% deposit invoice of ${formatEUR(depositInvoiceTotal)} will be generated.`,confirmLabel:"Place Order",danger:false,onConfirm:async ()=>{closeConfirm();await handleSubmitOrder();}});}}} disabled={!canSubmit||submitting} style={{width:"100%",background:canSubmit&&!submitting?"#fff":"#333",color:canSubmit&&!submitting?"#000":"#666",border:"none",padding:"14px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:canSubmit&&!submitting?"pointer":"default",fontFamily:FONT}}>{submitting?"Placing Order...":"Place Order"}</button>
+                  <button className="da-btn" onClick={()=>{if(canSubmit&&!submitting){askConfirm({title:"Confirm Order",message:`Place order ${orderNumber} for ${formatEUR(totalWithVat)}? A shipping invoice of ${formatEUR(depositInvoiceTotal)} will be generated now.`,confirmLabel:"Place Order",danger:false,onConfirm:async ()=>{closeConfirm();await handleSubmitOrder();}});}}} disabled={!canSubmit||submitting} style={{width:"100%",background:canSubmit&&!submitting?"#fff":"#333",color:canSubmit&&!submitting?"#000":"#666",border:"none",padding:"14px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:canSubmit&&!submitting?"pointer":"default",fontFamily:FONT}}>{submitting?"Placing Order...":"Place Order"}</button>
                   <button className="da-btn da-btn-outline" onClick={()=>setView("catalog")} style={{width:"100%",background:"transparent",border: "1px solid #222",padding:"12px",borderRadius:12,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color: "#eee",transition:"all 0.25s"}}>Back to Catalog</button>
                 </div>
               </div>
@@ -1296,11 +1010,11 @@ export default function DeeAprilB2B() {
       <Header right={<UserNav />} />
       <FadeIn delay={0.1}><div className="da-pad" style={{padding:"48px 48px"}}>
         <div style={{fontSize:17,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:32}}>My Orders</div>
-        {allOrders.filter(o => o.userId === session?.user?.id).length === 0 ? (
+        {allOrders.filter(o => o.userId === session?.id).length === 0 ? (
           <div style={{padding:"40px",textAlign:"center",color: "#666"}}>No orders yet. <button onClick={()=>setView("catalog")} style={{background:"none",border:"none",color: "#fff",textDecoration:"underline",cursor:"pointer",fontFamily:FONT}}>Start shopping</button></div>
         ) : (
           <div style={{display:"grid",gap:24}}>
-            {allOrders.filter(o => o.userId === session?.user?.id).map(order => (
+            {allOrders.filter(o => o.userId === session?.id).map(order => (
               <div key={order.id} style={{background: "#000",borderRadius:12,border: "1px solid #2a2a2a",padding:"24px"}}>
                 <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start",marginBottom:16}}>
                   <div>
@@ -1341,8 +1055,8 @@ export default function DeeAprilB2B() {
                   </div>
                 )}
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                  <button className="da-btn da-btn-outline" onClick={()=>handleViewInvoice(order.id,"myorders","deposit")} style={{background:"transparent",border: "1px solid #222",padding:"9px 20px",borderRadius:10,fontSize:10,color: "#eee",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>30% Invoice</button>
-                  {order.statuses.balance_invoiced && <button className="da-btn da-btn-outline" onClick={()=>handleViewInvoice(order.id,"myorders","balance")} style={{background:"transparent",border: "1px solid #222",padding:"9px 20px",borderRadius:10,fontSize:10,color: "#eee",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>70% Invoice</button>}
+                  <button className="da-btn da-btn-outline" onClick={()=>handleViewInvoice(order.id,"myorders","deposit")} style={{background:"transparent",border: "1px solid #222",padding:"9px 20px",borderRadius:10,fontSize:10,color: "#eee",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Shipping Invoice</button>
+                  {order.statuses.balance_invoiced && <button className="da-btn da-btn-outline" onClick={()=>handleViewInvoice(order.id,"myorders","balance")} style={{background:"transparent",border: "1px solid #222",padding:"9px 20px",borderRadius:10,fontSize:10,color: "#eee",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Full Invoice</button>}
                   {editingOrderId === order.id ? null : (
                     <>
                       {!order.cancelled && !order.statuses.balance_paid && <button className="da-btn da-btn-outline" onClick={()=>{setEditingOrderId(order.id);setEditQtys(Object.fromEntries(order.lines.map(l=>[l.sku,l.qty])));}} style={{background:"transparent",border: "1px solid #222",padding:"9px 20px",borderRadius:10,fontSize:10,color: "#eee",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Edit</button>}
@@ -1364,7 +1078,7 @@ export default function DeeAprilB2B() {
 
   if (view === "admin") return (
     <div style={base}>
-      <Header right={<button onClick={()=>{setIsAdmin(false);setView("landing");}} style={{background:"none",border: "1px solid #2a2a2a",padding:"6px 14px",borderRadius:8,fontSize:10,color: "#666",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Sign Out</button>} />
+      <Header right={<div style={{display:"flex",gap:10,alignItems:"center"}}><button onClick={()=>setView("catalog")} style={{background:"none",border: "1px solid #2a2a2a",padding:"6px 14px",borderRadius:8,fontSize:10,color: "#888",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>View Portal</button><button onClick={handleLogout} style={{background:"none",border: "1px solid #2a2a2a",padding:"6px 14px",borderRadius:8,fontSize:10,color: "#666",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Sign Out</button></div>} />
       <div className="da-pad" style={{padding:"48px 48px"}}>
         <div style={{fontSize:17,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:32}}>Admin Panel</div>
 
@@ -1430,6 +1144,37 @@ export default function DeeAprilB2B() {
                 )))}
               </div>
               <button onClick={saveInventory} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Save All</button>
+            </div>
+          )}
+        </div>
+
+        <div style={{background: "#000",borderRadius:12,border: "1px solid #2a2a2a",marginBottom:32}}>
+          <button onClick={()=>setAdminExpanded(adminExpanded==="admins"?null:"admins")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:FONT,color:"#fff"}}>
+            Admins ({admins.length})
+            <span style={{fontSize:16,color:"#888"}}>{adminExpanded==="admins"?"−":"+"}</span>
+          </button>
+          {adminExpanded==="admins" && (
+            <div style={{borderTop: "1px solid #222",padding:"20px"}}>
+              <div style={{marginBottom:24}}>
+                {admins.map((a) => (
+                  <div key={a.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px",background: "#1a1a1a",borderRadius:8,marginBottom:8,fontSize:11}}>
+                    <div>
+                      <div style={{fontWeight:600}}>{a.email}{a.id===session?.id && <span style={{marginLeft:8,color:"#666",fontWeight:400,fontSize:10}}>(you)</span>}</div>
+                      {a.company && <div style={{color: "#888",fontSize:10,marginTop:2}}>{a.company}</div>}
+                    </div>
+                    {a.id !== session?.id && <button onClick={()=>removeAdmin(a.id)} style={{background:"#b91c1c",color:"#fff",border:"none",padding:"6px 12px",borderRadius:6,fontSize:10,cursor:"pointer",fontFamily:FONT,fontWeight:500}}>Remove</button>}
+                  </div>
+                ))}
+              </div>
+              <div style={{background: "#0a0a0a",padding:"16px",borderRadius:8}}>
+                <div style={{fontSize:11,fontWeight:600,marginBottom:12,letterSpacing:"0.08em",textTransform:"uppercase",color: "#888"}}>Add New Admin</div>
+                <div style={{display:"grid",gap:12,marginBottom:12}}>
+                  <input className="da-input" style={{...inputStyle,fontSize:11}} type="email" placeholder="Email" value={adminManageForm.email} onChange={e=>setAdminManageForm({...adminManageForm,email:e.target.value})} />
+                  <input className="da-input" style={{...inputStyle,fontSize:11}} placeholder="Name / company (optional)" value={adminManageForm.company} onChange={e=>setAdminManageForm({...adminManageForm,company:e.target.value})} />
+                </div>
+                <button onClick={addAdmin} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Add Admin</button>
+                <div style={{fontSize:10,color: "#666",marginTop:10,lineHeight:1.5}}>They'll get a welcome email — no password to set, they just sign in with a code at the Admin entry point.</div>
+              </div>
             </div>
           )}
         </div>
@@ -1580,8 +1325,8 @@ export default function DeeAprilB2B() {
                   </div>
                 </div>
                 <div className="da-order-actions" style={{display:"flex",gap:8}}>
-                  <button className="da-btn da-btn-outline" onClick={()=>handleViewInvoice(order.id,"admin","deposit")} style={{background:"transparent",border: "1px solid #222",padding:"9px 18px",borderRadius:10,fontSize:10,color: "#eee",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>30% Invoice</button>
-                  {order.statuses.balance_invoiced && <button className="da-btn da-btn-outline" onClick={()=>handleViewInvoice(order.id,"admin","balance")} style={{background:"transparent",border: "1px solid #222",padding:"9px 18px",borderRadius:10,fontSize:10,color: "#eee",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>70% Invoice</button>}
+                  <button className="da-btn da-btn-outline" onClick={()=>handleViewInvoice(order.id,"admin","deposit")} style={{background:"transparent",border: "1px solid #222",padding:"9px 18px",borderRadius:10,fontSize:10,color: "#eee",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Shipping Invoice</button>
+                  {order.statuses.balance_invoiced && <button className="da-btn da-btn-outline" onClick={()=>handleViewInvoice(order.id,"admin","balance")} style={{background:"transparent",border: "1px solid #222",padding:"9px 18px",borderRadius:10,fontSize:10,color: "#eee",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Full Invoice</button>}
                   {editingOrderId === order.id ? null : (
                     <>
                       {!order.cancelled && !order.statuses.balance_paid && <button className="da-btn da-btn-outline" onClick={()=>{setEditingOrderId(order.id);setEditQtys(Object.fromEntries(order.lines.map(l=>[l.sku,l.qty])));}} style={{background:"transparent",border: "1px solid #222",padding:"9px 18px",borderRadius:10,fontSize:10,color: "#eee",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Edit</button>}
@@ -1607,8 +1352,8 @@ export default function DeeAprilB2B() {
   if (view === "invoice") {
     const displayId = viewingOrderId || orderNumber;
     const cur = allOrders.find(o => o.id === displayId);
-    const curDepositTotal = cur ? cur.depositAmount + (cur.shipping || 0) : depositInvoiceTotal;
-    const curBalance = cur ? cur.balance_amount : Math.round((totalBeforeShipping - depositAmount) * 100) / 100;
+    const curDepositTotal = cur ? cur.depositAmount : depositInvoiceTotal;
+    const curBalance = cur ? cur.balanceAmount : totalBeforeShipping;
     const inv = cur || {buyer,totalWSP,vatInfo,vatAmount,shipping:shippingAmount,totalWithVat,depositAmount,depositInvoiceTotal,balanceAmount:curBalance,lines:orderLines,cancelled:false};
     if (cur && !cur.depositInvoiceTotal) inv.depositInvoiceTotal = curDepositTotal;
     const invDate = cur ? new Date(cur.date) : new Date();
@@ -1635,20 +1380,20 @@ export default function DeeAprilB2B() {
             {/* Invoice type toggle — only show if balance is available */}
             {cur && cur.statuses?.balance_invoiced && (
               <div style={{display:"flex",gap:8,marginBottom:20}}>
-                <button onClick={()=>setInvoiceViewType("deposit")} style={{padding:"8px 16px",borderRadius:8,fontSize:10,fontWeight:invoiceViewType==="deposit"?600:400,border:invoiceViewType==="deposit"?"2px solid #fff":"1px solid #444",background:invoiceViewType==="deposit"?"#000":"transparent",color:invoiceViewType==="deposit"?"#fff":"#999",cursor:"pointer",fontFamily:FONT,textTransform:"uppercase",letterSpacing:"0.08em",transition:"all 0.2s"}}>30% Deposit</button>
-                <button onClick={()=>setInvoiceViewType("balance")} style={{padding:"8px 16px",borderRadius:8,fontSize:10,fontWeight:invoiceViewType==="balance"?600:400,border:invoiceViewType==="balance"?"2px solid #fff":"1px solid #444",background:invoiceViewType==="balance"?"#000":"transparent",color:invoiceViewType==="balance"?"#fff":"#999",cursor:"pointer",fontFamily:FONT,textTransform:"uppercase",letterSpacing:"0.08em",transition:"all 0.2s"}}>70% Balance</button>
+                <button onClick={()=>setInvoiceViewType("deposit")} style={{padding:"8px 16px",borderRadius:8,fontSize:10,fontWeight:invoiceViewType==="deposit"?600:400,border:invoiceViewType==="deposit"?"2px solid #fff":"1px solid #444",background:invoiceViewType==="deposit"?"#000":"transparent",color:invoiceViewType==="deposit"?"#fff":"#999",cursor:"pointer",fontFamily:FONT,textTransform:"uppercase",letterSpacing:"0.08em",transition:"all 0.2s"}}>Shipping</button>
+                <button onClick={()=>setInvoiceViewType("balance")} style={{padding:"8px 16px",borderRadius:8,fontSize:10,fontWeight:invoiceViewType==="balance"?600:400,border:invoiceViewType==="balance"?"2px solid #fff":"1px solid #444",background:invoiceViewType==="balance"?"#000":"transparent",color:invoiceViewType==="balance"?"#fff":"#999",cursor:"pointer",fontFamily:FONT,textTransform:"uppercase",letterSpacing:"0.08em",transition:"all 0.2s"}}>Full Invoice</button>
               </div>
             )}
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:28,flexWrap:"wrap",gap:12}}>
               <Logo style={{ height: 18 }} />
-              <div style={{textAlign:"right"}}><div style={{fontSize:15,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase"}}>{invoiceViewType==="balance"?"Balance Invoice":"Deposit Invoice"}</div><div style={{fontSize:10,color: "#666",marginTop:3}}>{invoiceViewType==="balance"?"70% Remaining Balance":"30% Advance Payment"}</div></div>
+              <div style={{textAlign:"right"}}><div style={{fontSize:15,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase"}}>{invoiceViewType==="balance"?"Order Invoice":"Shipping Invoice"}</div><div style={{fontSize:10,color: "#666",marginTop:3}}>{invoiceViewType==="balance"?"Full Payment Due":"Shipping Fee"}</div></div>
             </div>
             <div className="da-invoice-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24,marginBottom:20,fontSize:11,lineHeight:1.7}}>
               <div><div style={{fontSize:9,textTransform:"uppercase",letterSpacing:"0.14em",color: "#999",marginBottom:6}}>From</div><div style={{fontWeight:600}}>{SELLER.legalName}</div><div style={{color: "#888"}}>{SELLER.address}</div><div style={{color: "#888"}}>CVR: {SELLER.cvr}</div><div style={{color: "#888"}}>{SELLER.email}</div><div style={{color: "#888"}}>{SELLER.phone}</div></div>
               <div><div style={{fontSize:9,textTransform:"uppercase",letterSpacing:"0.14em",color: "#999",marginBottom:6}}>Bill To</div><div style={{fontWeight:600}}>{inv.buyer.company}</div>{inv.buyer.contact&&<div style={{color: "#888"}}>{inv.buyer.contact}</div>}<div style={{color: "#888"}}>{inv.buyer.address}</div><div style={{color: "#888"}}>{inv.buyer.zip} {inv.buyer.city}, {inv.buyer.country}</div>{inv.buyer.vat&&<div style={{color: "#888"}}>VAT: {inv.buyer.vat}</div>}<div style={{color: "#888"}}>{inv.buyer.email}</div></div>
             </div>
             <div className="da-invoice-meta" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:20,fontSize:11,padding:"12px 16px",background: "#1a1a1a",borderRadius:10}}>
-              <div><div style={{fontSize:9,textTransform:"uppercase",letterSpacing:"0.14em",color: "#999",marginBottom:3}}>Invoice No.</div><div style={{fontWeight:600}}>{invoiceViewType==="balance"?displayId+"-BAL":displayId}</div></div>
+              <div><div style={{fontSize:9,textTransform:"uppercase",letterSpacing:"0.14em",color: "#999",marginBottom:3}}>Invoice No.</div><div style={{fontWeight:600}}>{invoiceViewType==="balance"?displayId:displayId+"-SHIP"}</div></div>
               <div><div style={{fontSize:9,textTransform:"uppercase",letterSpacing:"0.14em",color: "#999",marginBottom:3}}>Date</div><div>{fmtDate(invDate)}</div></div>
               <div><div style={{fontSize:9,textTransform:"uppercase",letterSpacing:"0.14em",color: "#999",marginBottom:3}}>Due Date</div><div>{fmtDate(due)}</div></div>
             </div>
@@ -1661,21 +1406,19 @@ export default function DeeAprilB2B() {
               {inv.vatInfo.rate===0&&inv.buyer?.country&&<div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:10,color: "#666",borderBottom: "1px solid #222"}}><span>VAT</span><span>{inv.vatInfo.label}</span></div>}
               {inv.shipping>0&&<div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:11,color: "#888",borderBottom: "1px solid #222"}}><span>Shipping</span><span>{formatEUR(inv.shipping)}</span></div>}
               <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:11,color: "#888",borderBottom: "1px solid #222"}}><span>Total incl. VAT &amp; Shipping</span><span style={{fontWeight:500}}>{formatEUR(inv.totalWithVat)}</span></div>
-              {invoiceViewType==="balance" ? (<>
-                <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:11,color: "#888",borderBottom: "1px solid #222"}}><span>30% Deposit (paid)</span><span style={{color:"#16a34a"}}>−{formatEUR(inv.depositAmount)}</span></div>
-                <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",fontSize:16,fontWeight:700,borderTop:"2px solid #000",marginTop:6}}><span>Balance Due</span><span>{formatEUR(inv.balanceAmount || 0)}</span></div>
-              </>) : (<>
-                <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:11,color: "#888",borderBottom: "1px solid #222"}}><span>Deposit Rate</span><span>30%</span></div>
-                <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",fontSize:16,fontWeight:700,borderTop:"2px solid #000",marginTop:6}}><span>Amount Due</span><span>{formatEUR(inv.depositInvoiceTotal || inv.depositAmount)}</span></div>
-              </>)}
+              {invoiceViewType==="balance" ? (
+                <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",fontSize:16,fontWeight:700,borderTop:"2px solid #000",marginTop:6}}><span>Amount Due</span><span>{formatEUR(inv.balanceAmount || 0)}</span></div>
+              ) : (
+                <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",fontSize:16,fontWeight:700,borderTop:"2px solid #000",marginTop:6}}><span>Amount Due (Shipping)</span><span>{formatEUR(inv.depositInvoiceTotal || inv.depositAmount)}</span></div>
+              )}
             </div></div>
             {inv.vatInfo&&<div style={{marginTop:14,fontSize:10,color: "#666",fontStyle:"italic"}}>{inv.vatInfo.note}</div>}
             <div style={{marginTop:20,paddingTop:16,borderTop: "1px solid #333",fontSize:10,color: "#888",lineHeight:1.7}}>
               <div style={{fontSize:9,textTransform:"uppercase",letterSpacing:"0.14em",color: "#999",marginBottom:8}}>Payment Details</div>
               <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:"3px 14px"}}><span style={{color: "#666"}}>Bank</span><span>{SELLER.bank}</span><span style={{color: "#666"}}>REG</span><span>{SELLER.reg}</span><span style={{color: "#666"}}>Account</span><span>{SELLER.account}</span><span style={{color: "#666"}}>IBAN</span><span style={{fontWeight:500,letterSpacing:"0.03em"}}>{SELLER.iban}</span><span style={{color: "#666"}}>BIC/SWIFT</span><span>{SELLER.swift}</span></div>
               <div style={{marginTop:14,padding:"12px 16px",background: "#1a1a1a",borderRadius:8,color:"#888",fontSize:10,lineHeight:1.6}}>{invoiceViewType==="balance"
-                ? `This is the remaining 70% balance for order ${displayId}. Please transfer ${formatEUR(inv.balanceAmount || 0)} to the bank account above. Shipment will proceed upon receipt of payment.`
-                : `Order will be confirmed upon receipt of the 30% deposit (${formatEUR(inv.depositAmount)}) plus shipping (${formatEUR(inv.shipping||0)}) = ${formatEUR(inv.depositInvoiceTotal || (inv.depositAmount + (inv.shipping || 0)))}. Remaining 70% (${formatEUR(inv.balanceAmount||(inv.totalWithVat-inv.depositAmount-(inv.shipping||0)))}) is due prior to shipment. Shipping included in deposit invoice.`
+                ? `This is the full invoice for order ${displayId}. Please transfer ${formatEUR(inv.balanceAmount || 0)} to the bank account above. Shipment will proceed upon receipt of payment.`
+                : `Order will be confirmed upon receipt of the shipping fee (${formatEUR(inv.depositInvoiceTotal || inv.depositAmount)}). The full order amount (${formatEUR(inv.balanceAmount || 0)}) is invoiced separately and due prior to shipment.`
               }</div>
             </div>
           </div>
