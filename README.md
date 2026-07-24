@@ -1,6 +1,6 @@
-# Dee April B2B
+# Dee B2B
 
-B2B wholesale ordering portal for **Dee April Parfums** — a Danish niche perfume brand.
+B2B wholesale ordering portal for **DEE** — a Danish niche perfume brand.
 
 - **Live:** [order.deeapril.com](https://order.deeapril.com) / [order.maison-dee.com](https://order.maison-dee.com) (same app, two domains)
 - **Client:** Dorte — `da@deeapril.com`
@@ -47,7 +47,7 @@ Set in **Railway → Project → Variables** for production, mirrored locally in
 | `DATABASE_URL`                    | Yes       | Railway auto-injects this when the Postgres addon is linked — don't set manually in production. |
 | `JWT_SECRET`                      | Yes       | Session signing. `openssl rand -hex 32` to generate.                  |
 | `RESEND_API_KEY`                  | Yes       | Without it, OTP emails and all transactional emails fail.             |
-| `RESEND_FROM_EMAIL`               | Yes       | `Dee April Parfums <order@deeapril.com>`                              |
+| `RESEND_FROM_EMAIL`               | Yes       | `DEE <order@deeapril.com>`                                            |
 | `SITE_URL`                        | No        | Defaults to `https://order.deeapril.com`. Point at the Railway temp domain for pre-cutover testing. |
 | `ECONOMIC_APP_SECRET_TOKEN`       | No        | e-conomic sync — no-op (silent) if unset. Live and verified when set. |
 | `ECONOMIC_AGREEMENT_GRANT_TOKEN`  | No        | ↑ Obtained via the InstallationURL flow — see `app/api/economic/callback/route.js`. |
@@ -56,7 +56,7 @@ Set in **Railway → Project → Variables** for production, mirrored locally in
 
 ```
 app/
-  DeeAprilB2B.js       — Main monolith: all views, state, client-side logic
+  DeeB2B.js            — Main monolith: all views, state, client-side logic
   layout.js, page.js   — Next.js App Router entry points
   privacy-policy/, eula/, dpa/, legal-layout.js — Legal pages
   api/                 — auth, admin, orders, inventory, promo-codes, profile,
@@ -94,7 +94,7 @@ npm run build
 ## Order flow
 
 1. Buyer signs up / logs in via a 6-digit code emailed to them — no passwords anywhere.
-2. Browses Chapter I at wholesale prices, fills cart, opens checkout.
+2. Browses the range at wholesale prices, fills cart, opens checkout.
 3. Submits order → server re-derives pricing, decrements stock atomically, inserts the order → **shipping invoice** PDF generated and emailed to the buyer (+ admin alert) → synced to e-conomic.
 4. Admin advances status from the admin panel: shipping invoiced (automatic) → shipping paid → packed → **full order invoiced** (second and final invoice, synced to e-conomic) → full order paid → shipped → received. Each step emails the buyer.
 5. Deep links `?order=DA-XXXX-XXXX` in email CTAs land the buyer on their specific order after auth.

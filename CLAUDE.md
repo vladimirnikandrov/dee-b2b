@@ -1,9 +1,9 @@
-# Dee April B2B — Wholesale Ordering Platform
+# Dee B2B — Wholesale Ordering Platform
 
 ## Project Overview
-B2B wholesale portal for **Dee April Parfums** (Danish niche perfume brand).
+B2B wholesale portal for **DEE** (Danish niche perfume brand).
 Client: Dorte (`da@deeapril.com`). Built by PROJECT 1804 (Vladimir Nikandrov).
-Live at **order.deeapril.com** and **order.maison-dee.com** (same app, two domains — see Domains section) | Repo: github.com/vladimirnikandrov/dee-april-b2b
+Live at **order.deeapril.com** and **order.maison-dee.com** (same app, two domains — see Domains section) | Repo: github.com/vladimirnikandrov/dee-b2b
 
 See also: [`README.md`](./README.md) for setup, [`CHANGELOG.md`](./CHANGELOG.md) for release history.
 
@@ -35,9 +35,9 @@ Do this **before** ending the turn, not as a separate follow-up. The whole point
 ## File Structure
 ```
 app/
-  DeeAprilB2B.js                    — Main monolith (~1430 lines). ALL UI, state, client-side logic.
+  DeeB2B.js                    — Main monolith (~1430 lines). ALL UI, state, client-side logic.
   layout.js                         — Next.js root layout
-  page.js                           — Renders <DeeAprilB2B />
+  page.js                           — Renders <DeeB2B />
   legal-layout.js                   — Shared layout for the legal pages below
   privacy-policy/page.js            — Privacy policy
   eula/page.js                      — EULA
@@ -71,7 +71,7 @@ lib/                                 — shared between client components and AP
   orders.js                          — toFlatOrderData() — converts a DB row (snake_case) to the flat camelCase shape used by PDF/email/client
   pricing.js                         — Server-authoritative pricing: re-derives all amounts from {sku, qty} + buyer country/VAT. Client is never trusted for price data.
   vat.js                             — getVatInfo, EU_COUNTRIES, DK_VAT_RATE
-  products.js                        — Full SKU catalog (12 live "Chapter I" variants + unused Testers/Discovery Kit entries — see note below)
+  products.js                        — Full SKU catalog: DEE 01-05 (4 sizes each) + DISCOVER ME (see note below)
   seller.js                          — SELLER constants (DA DESIGN APS, CVR 45305481, IBAN, etc.)
   format.js                          — formatEUR (Intl en-IE), SIZE_LABELS
   assets.js                          — Local logo asset paths
@@ -89,10 +89,10 @@ README.md                           — Project intro + setup
 jsconfig.json                       — Enables `@/*` path alias
 ```
 
-**Note on `lib/products.js`**: the "Testers" and "Discovery Kit" collections exist in the SKU data but have no product image in `public/images/`, so they never render in the live catalog (image-driven rendering — no image, no tile). Not a bug; just unfinished. See CHANGELOG backlog.
+**Note on `lib/products.js`**: no named collections (renamed 2026-07-24) — every fragrance is just "DEE 0X", variants ordered smallest to largest (2/20/50/100 ML). DEE 04, DEE 05, and DISCOVER ME exist in the catalog but ship at zero stock (real pricing/photos for 04/05 still pending) — see CHANGELOG backlog.
 
 ## Architecture Decisions
-- **Single-file frontend**: Everything in `DeeAprilB2B.js` (views, components, state). No routing — view state managed via `useState`. Still true; hasn't been split out.
+- **Single-file frontend**: Everything in `DeeB2B.js` (views, components, state). No routing — view state managed via `useState`. Still true; hasn't been split out.
 - **Dark mode everywhere**: Backgrounds `#000` / `#111` / `#1a1a1a`, text `#fff` / `#eee`, borders `#333` / `#444`. Floating elements (cart bar, toast) are WHITE on dark.
 - **Inline styles only**: No CSS files, no Tailwind. All styling via `style={{}}` props.
 - **Server-authoritative everything**: pricing (`lib/pricing.js`), PDF generation, and email content are all re-derived from the DB by `orderId` server-side — never trust a client-submitted `order`/`data` payload. This was a deliberate fix during the 2026-07 migration (the old Supabase-era code trusted the client for this).
@@ -110,7 +110,7 @@ Admins are managed entirely inside the admin panel — "Admins" section, add by 
 
 ## Order Flow
 1. Buyer registers / signs in via OTP.
-2. Browses Chapter I catalog at wholesale prices → adds to cart → fills shipping/billing → places order.
+2. Browses the DEE range at wholesale prices → adds to cart → fills shipping/billing → places order.
 3. `POST /api/orders`: server re-derives all pricing from `{sku, qty}` + buyer country/VAT (`lib/pricing.js` — client-submitted prices are never trusted), atomically decrements stock (`update ... where stock >= qty`, fails cleanly on race), inserts the order row, generates the **shipping invoice PDF**, emails it to the buyer + an alert to admin, and syncs the shipping invoice to e-conomic.
 4. Admin advances statuses from the admin panel (each is a `PATCH /api/orders/:id/status` toggle): `deposit_invoiced` (fires automatically at creation, see above — this key name is historical, it now means "shipping invoiced") → `deposit_paid` → `packed` → `balance_invoiced` (creates the **full order invoice** PDF + email + e-conomic sync — this is the second and final invoice) → `balance_paid` → `shipped` → `received`.
 5. Every status toggled ON sends the matching buyer email; the two invoice statuses also generate and attach a fresh PDF.
@@ -141,7 +141,7 @@ Live and verified against Dorte's real account (agreement 1797386 / DA DESIGN Ap
 - **Never trust client-submitted order/pricing data** — always re-derive from the DB by `orderId` server-side (see `lib/pricing.js`, `generate-invoice/route.js`).
 - **Fire-and-forget emails/e-conomic sync**: intentional — a Resend or e-conomic failure must never block the order flow. Failures are logged via `console.error`, not surfaced to the buyer. This is a known tradeoff, not an oversight.
 - **Dark-mode contrast traps**: always check text/badge colors against dark backgrounds — common bugs are white-on-white and black-on-black.
-- **`viewRef` pattern**: `useRef(view)` mirrors view state for use inside async callbacks (stale-closure fix), still present in `DeeAprilB2B.js`.
+- **`viewRef` pattern**: `useRef(view)` mirrors view state for use inside async callbacks (stale-closure fix), still present in `DeeB2B.js`.
 
 ## Environment Variables
 See [`.env.local.example`](./.env.local.example) for the full list with descriptions. Set the same values in **Railway → Project → Variables** for production (Railway auto-injects `DATABASE_URL` when the Postgres addon is linked — don't set it manually).

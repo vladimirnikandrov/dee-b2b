@@ -1,8 +1,8 @@
 {
-  "name": "dee-april-b2b",
+  "name": "dee-b2b",
   "version": "1.0.0",
   "private": true,
-  "description": "B2B wholesale ordering portal for Dee April Parfums",
+  "description": "B2B wholesale ordering portal for DEE",
   "engines": {
     "node": ">=20.0.0"
   },

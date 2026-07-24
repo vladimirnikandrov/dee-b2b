@@ -207,7 +207,7 @@ function AuthScreen({ title, fields, onSubmit, submitLabel, altText, altAction, 
    MAIN APP
    ═══════════════════════════════════════════ */
 
-export default function DeeAprilB2B() {
+export default function DeeB2B() {
   useStyleInjection();
 
   const [session, setSession] = useState(null); // { id, email, role } | null
@@ -673,7 +673,7 @@ export default function DeeAprilB2B() {
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], {type:"text/csv"});
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `dee-april-orders-${new Date().toISOString().slice(0,10)}.csv`;
+    const a = document.createElement("a"); a.href = url; a.download = `dee-b2b-orders-${new Date().toISOString().slice(0,10)}.csv`;
     a.click(); URL.revokeObjectURL(url);
     showToast("CSV exported");
   };

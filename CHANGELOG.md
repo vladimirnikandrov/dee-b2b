@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to **Dee April B2B** (order.deeapril.com / order.maison-dee.com).
+All notable changes to **Dee B2B** (order.deeapril.com / order.maison-dee.com).
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 As of 2026-07-24, the `web` service is connected directly to this repo's `main` branch on Railway — every push auto-deploys, no CLI/token needed. Before that, deploys went via `railway up --ci --service web` independent of git pushes; see `CLAUDE.md`. As of 2026-07-18, every deployed change also gets a dated entry here in the same session — see the standing workflow rule at the top of `CLAUDE.md`. Versions referenced from the Vercel era (e.g. "v9") are informal milestones kept for history.
 
@@ -10,13 +10,25 @@ As of 2026-07-24, the `web` service is connected directly to this repo's `main` 
 
 Nothing in progress. Don't start any of these without an explicit ask from Vladimir.
 
-1. **Move IT infrastructure off Vladimir's personal accounts onto Dorte's own** — Railway, Resend, Cloudflare DNS (`deeapril.com`/`maison-dee.com`/`maisondeeapril.com`), and the GitHub repo are all currently under Vladimir's accounts. Domain registrar ownership hasn't been checked. e-conomic does *not* need migration — already on Dorte's own agreement.
-2. **`app/DeeAprilB2B.js` is still a ~1450-line monolith** — no routing, all views/state in one file. Not urgent, but worth splitting if the app keeps growing.
-3. **No TypeScript, no automated tests** — on a money/invoice app, this is still true. Nothing has caught a bug yet, but it's a standing risk on VAT math / pricing changes.
-4. **Fire-and-forget emails and e-conomic sync silently swallow failures** — intentional (a Resend or e-conomic outage must never block an order), but there's no admin-visible alert when something actually fails, only a server log line. Worth a lightweight "last sync failed" indicator in the admin panel at some point.
-5. **DEE 04, DEE 05, and DISCOVER ME are placeholder-priced** — WSP/RRP for DEE 04/05 were copied from DEE 01-03 as a stand-in (not real production items yet). Confirm real pricing before setting their stock above zero.
+1. **Move IT infrastructure off Vladimir's personal accounts onto Dorte's own** — Railway, Resend, Cloudflare DNS (`deeapril.com`/`maison-dee.com`/`maisondeeapril.com`), and the GitHub repo (`vladimirnikandrov/dee-b2b`) are all currently under Vladimir's accounts. Domain registrar ownership hasn't been checked. e-conomic does *not* need migration — already on Dorte's own agreement.
+2. **Switch sender/reply email to `order@maison-dee.com`** — blocked on Dorte creating that mailbox (not done yet as of 2026-07-24). Once it exists: update `RESEND_FROM_EMAIL` in Railway, `lib/seller.js`'s `email` field, and verify the new sending domain in Resend.
+3. **`app/DeeB2B.js` is still a ~1450-line monolith** — no routing, all views/state in one file. Not urgent, but worth splitting if the app keeps growing.
+4. **No TypeScript, no automated tests** — on a money/invoice app, this is still true. Nothing has caught a bug yet, but it's a standing risk on VAT math / pricing changes.
+5. **Fire-and-forget emails and e-conomic sync silently swallow failures** — intentional (a Resend or e-conomic outage must never block an order), but there's no admin-visible alert when something actually fails, only a server log line. Worth a lightweight "last sync failed" indicator in the admin panel at some point.
+6. **DEE 04, DEE 05, and DISCOVER ME are placeholder-priced** — WSP/RRP for DEE 04/05 were copied from DEE 01-03 as a stand-in (not real production items yet). Confirm real pricing before setting their stock above zero.
 
 ---
+
+## 2026-07-24 (latest) — Project rename: Dee April B2B → Dee B2B
+
+Removed "April" from every remaining project/technical identifier (the customer-facing brand copy was already done — see the "Rename to DEE" entry below; this is the project's own name):
+
+- **GitHub**: repository renamed `vladimirnikandrov/dee-april-b2b` → `vladimirnikandrov/dee-b2b` (GitHub keeps the old URL redirecting). Local `origin` remote updated to match.
+- **Local**: Dropbox folder renamed `Coding/Dee April B2B` → `Coding/Dee B2B`; component file `app/DeeAprilB2B.js` → `app/DeeB2B.js` (and its exported function `DeeAprilB2B` → `DeeB2B`, updated the import in `app/page.js`); `package.json` name `dee-april-b2b` → `dee-b2b` (and its `package-lock.json` regenerated to match).
+- **Docs**: README.md/CLAUDE.md titles and file-structure listings updated; stale "Chapter I"/"Testers"/"Discovery Kit" mentions in `CLAUDE.md` (missed in the earlier catalog rename) corrected to the current DEE 01-05 + DISCOVER ME reality.
+- **Railway**: project display name still says "Dee April B2B" — attempted to update it but the change wouldn't persist through the dashboard (cosmetic only, doesn't affect service names/domains/the live app; Project Settings → General → Name, 30-second manual fix).
+
+Historical CHANGELOG entries below that reference the old file/repo name are left as-is — they're an accurate record of what those things were actually called at the time.
 
 ## 2026-07-24 (later still) — Logo left-alignment fix
 

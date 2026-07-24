@@ -1,4 +1,4 @@
--- Dee April B2B — Railway Postgres schema
+-- Dee B2B — Railway Postgres schema
 -- Replaces Supabase (Postgres + Auth). Plain SQL, no RLS —
 -- authorization now happens exclusively in Next.js API routes.
 

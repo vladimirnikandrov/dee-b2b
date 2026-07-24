@@ -1,2 +1,2 @@
 "use client";
-export { default } from "./DeeAprilB2B";
+export { default } from "./DeeB2B";

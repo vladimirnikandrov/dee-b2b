@@ -1,4 +1,4 @@
--- Dee April B2B — data export from Supabase (gsojazybzodouvdmqkvg), snapshot 2026-07-02.
+-- Dee B2B — data export from Supabase (gsojazybzodouvdmqkvg), snapshot 2026-07-02.
 -- Run after schema.sql. This is a ONE-TIME snapshot — re-export and re-run
 -- immediately before the final DNS cutover (see migration plan, step 7) to
 -- pick up anything written to the live Supabase-backed site in the meantime.
