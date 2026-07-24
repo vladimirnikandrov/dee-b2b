@@ -18,6 +18,10 @@ Nothing in progress. Don't start any of these without an explicit ask from Vladi
 
 ---
 
+## 2026-07-24 (later same day) — Variant ordering, inventory backfill
+
+Catalog variants within each product now list smallest to largest (2 / 20 / 50 / 100 ML) — was largest-to-smallest before. Same reorder applied to the admin promo-code editor's per-size price grid for consistency. Also backfilled production `inventory` rows via the live admin API: DEE 04, DEE 05 (all 4 sizes each) created at stock 0, and DISCOVER ME's pre-existing stock (100, left over from "Discovery Kit") zeroed out — all three are correctly "Out of Stock" now rather than just missing/stale rows.
+
 ## 2026-07-24 — Rename to DEE, new buyer invite flow, Railway auto-deploy
 
 **Catalog rename** — no more named collections. "Parfum"/"Parfum I"/"Parfum II" (same SKUs/EANs) are now **DEE 01/02/03**; added two new fragrances **DEE 04** and **DEE 05** (placeholder pricing, zero stock); "Discovery Kit" renamed to **DISCOVER ME**, now with a real product photo. All three new/renamed zero-stock items need their `inventory` rows confirmed via Admin → Inventory after this deploy (new SKUs default to 0 automatically on first Save; DISCOVER ME's existing stock needs zeroing by hand since it already had a row).

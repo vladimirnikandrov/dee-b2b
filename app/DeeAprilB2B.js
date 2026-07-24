@@ -1122,7 +1122,7 @@ export default function DeeAprilB2B() {
                   <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px",background: "#1a1a1a",borderRadius:8,marginBottom:8,fontSize:11}}>
                     <div>
                       <div style={{fontWeight:600}}>{p.code}</div>
-                      <div style={{color: "#888",fontSize:10,marginTop:2}}>{p.label} — {p.prices["100 ML"]}/{p.prices["50 ML"]}/{p.prices["20 ML"]}/{p.prices["2 ML"]}</div>
+                      <div style={{color: "#888",fontSize:10,marginTop:2}}>{p.label} — {p.prices["2 ML"]}/{p.prices["20 ML"]}/{p.prices["50 ML"]}/{p.prices["100 ML"]}</div>
                     </div>
                     <button onClick={()=>deletePromoCode(p.code)} style={{background:"#b91c1c",color:"#fff",border:"none",padding:"6px 12px",borderRadius:6,fontSize:10,cursor:"pointer",fontFamily:FONT,fontWeight:500}}>Delete</button>
                   </div>
@@ -1134,7 +1134,7 @@ export default function DeeAprilB2B() {
                   <input className="da-input" style={{...inputStyle,fontSize:11}} placeholder="Code (e.g. MOODSCENTBAR)" value={adminPromoForm.code} onChange={e=>setAdminPromoForm({...adminPromoForm,code:e.target.value})} />
                   <input className="da-input" style={{...inputStyle,fontSize:11}} placeholder="Label (e.g. B2VIP)" value={adminPromoForm.label} onChange={e=>setAdminPromoForm({...adminPromoForm,label:e.target.value})} />
                   <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
-                    {["100 ML","50 ML","20 ML","2 ML","KIT"].map(size => {
+                    {["2 ML","20 ML","50 ML","100 ML","KIT"].map(size => {
                       const placeholderSize = {
                         "100 ML": "€ 100ml",
                         "50 ML": "€ 50ml",
