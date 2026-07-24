@@ -12,9 +12,8 @@ Nothing in progress. Don't start any of these without an explicit ask from Vladi
 
 1. **Move Railway/Resend/GitHub off Vladimir's personal accounts onto Dorte's own** — Cloudflare and the domain registrar are sorted (per Vladimir, 2026-07-24); these three are what's left.
 2. **Switch sender/reply email to `order@maison-dee.com`** — blocked on Dorte creating that mailbox (not done yet as of 2026-07-24). Once it exists: update `RESEND_FROM_EMAIL` in Railway, `lib/seller.js`'s `email` field, and verify the new sending domain in Resend.
-3. **Apply `db/migration-004-sync-failures.sql` to production** — the "Sync Failures" admin panel section (2026-07-24) is deployed but has no table to read from yet; wasn't able to run this one through the Railway dashboard's Data tab from this session (canvas-rendered, not readable). The feature degrades safely without it (fails silently, doesn't touch order/email flow) but won't show anything real until this runs.
 
-The longstanding tech-debt items previously listed here (monolith split, no TS/tests, silent sync failures) have all been worked through as of 2026-07-24 — see the dated entries below.
+The longstanding tech-debt items previously listed here (monolith split, no TS/tests, silent sync failures) have all been worked through as of 2026-07-24 — see the dated entries below. DEE 04/05 pricing confirmed fine as-is (Vladimir, 2026-07-24) — no longer a backlog item.
 
 ---
 
