@@ -44,7 +44,7 @@ Removed "April" from every remaining project/technical identifier (the customer-
 - **GitHub**: repository renamed `vladimirnikandrov/dee-april-b2b` → `vladimirnikandrov/dee-b2b` (GitHub keeps the old URL redirecting). Local `origin` remote updated to match.
 - **Local**: Dropbox folder renamed `Coding/Dee April B2B` → `Coding/Dee B2B`; component file `app/DeeAprilB2B.js` → `app/DeeB2B.js` (and its exported function `DeeAprilB2B` → `DeeB2B`, updated the import in `app/page.js`); `package.json` name `dee-april-b2b` → `dee-b2b` (and its `package-lock.json` regenerated to match).
 - **Docs**: README.md/CLAUDE.md titles and file-structure listings updated; stale "Chapter I"/"Testers"/"Discovery Kit" mentions in `CLAUDE.md` (missed in the earlier catalog rename) corrected to the current DEE 01-05 + DISCOVER ME reality.
-- **Railway**: project display name still says "Dee April B2B" — attempted to update it but the change wouldn't persist through the dashboard (cosmetic only, doesn't affect service names/domains/the live app; Project Settings → General → Name, 30-second manual fix).
+- **Railway**: project display name updated to "Dee B2B" (2026-07-24, later same day) — the plain click-through form submit wasn't persisting; fixed by driving the form's real `submit` event directly (`form.requestSubmit()`) instead, confirmed via the dashboard project list after a fresh reload.
 
 Historical CHANGELOG entries below that reference the old file/repo name are left as-is — they're an accurate record of what those things were actually called at the time.
 
