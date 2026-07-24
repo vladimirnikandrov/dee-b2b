@@ -219,6 +219,7 @@ export default function DeeB2B() {
   const [admins, setAdmins] = useState([]);
   const [adminManageForm, setAdminManageForm] = useState({ email: "", company: "" });
   const [buyers, setBuyers] = useState([]);
+  const [syncFailures, setSyncFailures] = useState([]);
   const [buyerManageForm, setBuyerManageForm] = useState({ email: "", company: "" });
   const [adminExpanded, setAdminExpanded] = useState(null);
   const [adminCompanyFilter, setAdminCompanyFilter] = useState(null);
@@ -721,6 +722,28 @@ export default function DeeB2B() {
     }
   };
 
+  const loadSyncFailures = async () => {
+    try {
+      const res = await fetch("/api/admin/sync-failures");
+      if (!res.ok) return;
+      const { failures } = await res.json();
+      setSyncFailures(failures || []);
+    } catch (e) {
+      logError("loadSyncFailures", e.message || e);
+    }
+  };
+
+  const resolveSyncFailure = async (id) => {
+    try {
+      const res = await fetch("/api/admin/sync-failures", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+      if (!res.ok) { showToast("Failed to dismiss"); return; }
+      setSyncFailures(prev => prev.map(f => f.id === id ? { ...f, resolved: true } : f));
+    } catch (e) {
+      logError("resolveSyncFailure", e.message || e);
+      showToast("Failed to dismiss");
+    }
+  };
+
   const loadBuyers = async () => {
     try {
       const res = await fetch("/api/admin/buyers");
@@ -800,6 +823,7 @@ export default function DeeB2B() {
     if (view === "admin" || view === "myorders") loadOrders();
     if (view === "admin") loadAdmins();
     if (view === "admin") loadBuyers();
+    if (view === "admin") loadSyncFailures();
     if (view === "catalog") loadInventory();
   }, [view]);
 
@@ -1237,6 +1261,35 @@ export default function DeeB2B() {
             </div>
           )}
         </div>
+
+        {/* ── Sync Failures (failed emails / e-conomic syncs) ── */}
+        {syncFailures.filter(f => !f.resolved).length > 0 && (
+        <div style={{background: "#000",borderRadius:12,border: "1px solid #7c2d12",marginBottom:32}}>
+          <button onClick={()=>setAdminExpanded(adminExpanded==="syncFailures"?null:"syncFailures")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:FONT,color:"#f97316"}}>
+            Sync Failures ({syncFailures.filter(f => !f.resolved).length})
+            <span style={{fontSize:16,color:"#888"}}>{adminExpanded==="syncFailures"?"−":"+"}</span>
+          </button>
+          {adminExpanded==="syncFailures" && (
+            <div style={{borderTop: "1px solid #222",padding:"20px"}}>
+              <div style={{fontSize:10,color: "#888",marginBottom:16,lineHeight:1.5}}>An order's shipping/full invoice email or e-conomic sync failed and needs a look — check the order directly, then dismiss once handled.</div>
+              <div style={{display:"grid",gap:8}}>
+                {syncFailures.filter(f => !f.resolved).map((f) => (
+                  <div key={f.id} style={{padding:"12px",background: "#1a1a1a",borderRadius:8,border:"1px solid #7c2d12",fontSize:11}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                      <div>
+                        <div style={{fontWeight:600,color:"#f97316"}}>{f.type === "email" ? "Email" : "e-conomic"} — {f.context}{f.order_id && <span style={{color:"#888",fontWeight:400}}> · order {f.order_id}</span>}</div>
+                        <div style={{color:"#999",fontSize:10,marginTop:4,fontFamily:"monospace",wordBreak:"break-all"}}>{f.error}</div>
+                        <div style={{color:"#666",fontSize:9,marginTop:4}}>{new Date(f.created_at).toLocaleString("en-GB")}</div>
+                      </div>
+                      <button onClick={()=>resolveSyncFailure(f.id)} style={{background:"transparent",border:"1px solid #444",color:"#888",padding:"6px 12px",borderRadius:6,fontSize:10,cursor:"pointer",fontFamily:FONT,fontWeight:500,whiteSpace:"nowrap"}}>Dismiss</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        )}
 
         {/* ── Error Log ── */}
         {errorLog.length > 0 && (

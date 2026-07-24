@@ -153,3 +153,23 @@ create table promo_codes (
   prices jsonb not null default '{}',
   created_at timestamptz default now()
 );
+
+-- ═══════════════════════════════════════════
+-- SYNC FAILURES
+-- Fire-and-forget email/e-conomic calls (lib/email.js, lib/economic.js)
+-- must never block the order flow, so failures only ever hit the server
+-- log — invisible to Dorte/Vladimir unless someone happens to be tailing
+-- Railway logs. This table gives the admin panel something to show instead.
+-- ═══════════════════════════════════════════
+
+create table sync_failures (
+  id uuid primary key default gen_random_uuid(),
+  type text not null check (type in ('email', 'economic')),
+  order_id text references orders(id) on delete set null,
+  context text not null,        -- email template name, or 'deposit'/'balance' for e-conomic
+  error text not null,
+  resolved boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create index sync_failures_unresolved_idx on sync_failures(resolved, created_at) where resolved = false;
