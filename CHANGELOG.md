@@ -10,14 +10,18 @@ As of 2026-07-24, the `web` service is connected directly to this repo's `main` 
 
 Nothing in progress. Don't start any of these without an explicit ask from Vladimir.
 
-1. **Move IT infrastructure off Vladimir's personal accounts onto Dorte's own** — Railway, Resend, Cloudflare DNS (`deeapril.com`/`maison-dee.com`/`maisondeeapril.com`), and the GitHub repo (`vladimirnikandrov/dee-b2b`) are all currently under Vladimir's accounts. Domain registrar ownership hasn't been checked. e-conomic does *not* need migration — already on Dorte's own agreement.
+1. **Move Railway/Resend/GitHub off Vladimir's personal accounts onto Dorte's own** — Cloudflare and the domain registrar are sorted (per Vladimir, 2026-07-24); these three are what's left.
 2. **Switch sender/reply email to `order@maison-dee.com`** — blocked on Dorte creating that mailbox (not done yet as of 2026-07-24). Once it exists: update `RESEND_FROM_EMAIL` in Railway, `lib/seller.js`'s `email` field, and verify the new sending domain in Resend.
-3. **`app/DeeB2B.js` is still a ~1450-line monolith** — no routing, all views/state in one file. Not urgent, but worth splitting if the app keeps growing.
-4. **No TypeScript, no automated tests** — on a money/invoice app, this is still true. Nothing has caught a bug yet, but it's a standing risk on VAT math / pricing changes.
-5. **Fire-and-forget emails and e-conomic sync silently swallow failures** — intentional (a Resend or e-conomic outage must never block an order), but there's no admin-visible alert when something actually fails, only a server log line. Worth a lightweight "last sync failed" indicator in the admin panel at some point.
-6. **DEE 04, DEE 05, and DISCOVER ME are placeholder-priced** — WSP/RRP for DEE 04/05 were copied from DEE 01-03 as a stand-in (not real production items yet). Confirm real pricing before setting their stock above zero.
+
+The longstanding tech-debt items previously listed here (monolith split, no TS/tests, silent sync failures) are being worked through as of 2026-07-24 — see the dated entries below.
 
 ---
+
+## 2026-07-24 (latest) — Test suite + lightweight type-checking
+
+Addresses the "no TypeScript, no automated tests" tech debt: added Vitest (`npm test`) with 23 tests covering `lib/vat.js` (all four VAT scenarios: DK, EU+VAT ID reverse charge, EU without VAT ID, non-EU export), `lib/pricing.js` (multi-line totals, promo-code price overrides, unknown-SKU/zero-qty handling, the shipping-only-deposit invariant), and `lib/orders.js` (DB row → flat/enriched shape mapping, numeric coercion, note filtering).
+
+Also added `// @ts-check` + JSDoc types to the money-shape modules (`lib/pricing.js`, `lib/vat.js`, `lib/orders.js`, `lib/products.js`, `lib/economic.js`) and a `tsconfig.json` + `npm run typecheck` script — catches exactly the class of bug the original 2026-05 audit flagged (a `vatInfo` shape drifting between where it's produced and consumed) at build time instead of at runtime. Deliberately **not** a full TypeScript conversion — stays plain `.js`, no file renames, no project-wide `checkJs` — per the project's own stated "pragmatic, no over-engineering" style in `CLAUDE.md`. `lib/invoice-pdf.js` was left un-checked: jsPDF's type definitions require exact-length tuples for its color-setter calls in a way this file's plain-array usage doesn't match, which is noise from a third-party library's types, not a real bug.
 
 ## 2026-07-24 (latest) — Project rename: Dee April B2B → Dee B2B
 
