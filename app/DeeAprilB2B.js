@@ -12,7 +12,7 @@ import { getVatInfo } from "@/lib/vat";
 
 function Logo({ color = "#fff", style = {} }) {
   const src = color === "#000" ? LOGO_BLACK : LOGO_WHITE;
-  return <img src={src} alt="Dee April Parfums" style={{ height: 28, objectFit: "contain", ...style }} />;
+  return <img src={src} alt="DEE" style={{ height: 28, objectFit: "contain", ...style }} />;
 }
 
 /* ═══════════════════════════════════════════
@@ -218,6 +218,8 @@ export default function DeeAprilB2B() {
   const [otpCode, setOtpCode] = useState("");
   const [admins, setAdmins] = useState([]);
   const [adminManageForm, setAdminManageForm] = useState({ email: "", company: "" });
+  const [buyers, setBuyers] = useState([]);
+  const [buyerManageForm, setBuyerManageForm] = useState({ email: "", company: "" });
   const [adminExpanded, setAdminExpanded] = useState(null);
   const [adminCompanyFilter, setAdminCompanyFilter] = useState(null);
   const [adminStatusFilter, setAdminStatusFilter] = useState("all");
@@ -719,6 +721,32 @@ export default function DeeAprilB2B() {
     }
   };
 
+  const loadBuyers = async () => {
+    try {
+      const res = await fetch("/api/admin/buyers");
+      if (!res.ok) return;
+      const { buyers: list } = await res.json();
+      setBuyers(list || []);
+    } catch (e) {
+      logError("loadBuyers", e.message || e);
+    }
+  };
+
+  const inviteBuyer = async () => {
+    if (!buyerManageForm.email.trim()) { showToast("Email required"); return; }
+    try {
+      const res = await fetch("/api/admin/buyers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buyerManageForm) });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error || "Failed to invite buyer"); return; }
+      setBuyerManageForm({ email: "", company: "" });
+      await loadBuyers();
+      showToast("Buyer invited — welcome email sent");
+    } catch (e) {
+      logError("inviteBuyer", e.message || e);
+      showToast("Failed to invite buyer");
+    }
+  };
+
   const loadAdmins = async () => {
     try {
       const res = await fetch("/api/admin/admins");
@@ -771,6 +799,7 @@ export default function DeeAprilB2B() {
   useEffect(() => {
     if (view === "admin" || view === "myorders") loadOrders();
     if (view === "admin") loadAdmins();
+    if (view === "admin") loadBuyers();
     if (view === "catalog") loadInventory();
   }, [view]);
 
@@ -820,7 +849,7 @@ export default function DeeAprilB2B() {
             <div style={{fontWeight:600,color:"#fff",marginBottom:12,fontSize:15,letterSpacing:"0.04em"}}>B2B Wholesale Portal</div>
             <div style={{marginBottom:16,maxWidth:420,margin:"0 auto 16px"}}>Browse the collection, place orders, and receive invoices — all in one place.</div>
             <div style={{fontSize:12,color:"rgba(255,255,255,0.4)",lineHeight:1.8,maxWidth:420,margin:"0 auto"}}>
-              <span style={{fontWeight:500,color:"rgba(255,255,255,0.6)"}}>How it works:</span> Create an account, browse Chapter I at wholesale prices, select quantities and place your order — a shipping invoice is generated first, with the full order invoiced before dispatch.
+              <span style={{fontWeight:500,color:"rgba(255,255,255,0.6)"}}>How it works:</span> Create an account, browse the range at wholesale prices, select quantities and place your order — a shipping invoice is generated first, with the full order invoiced before dispatch.
             </div>
           </div>
         </FadeIn>
@@ -885,7 +914,6 @@ export default function DeeAprilB2B() {
           <FadeIn key={pi} delay={0.15+pi*0.1} style={{marginBottom:pi<PRODUCTS.length-1?56:0}}>
             <div style={{display:"flex",alignItems:"baseline",gap:12,marginBottom:24,flexWrap:"wrap"}}>
               <span style={{fontSize:17,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase"}}>{product.name}</span>
-              <span style={{fontSize:10,letterSpacing:"0.15em",textTransform:"uppercase",color: "#999"}}>{product.collection}</span>
             </div>
             <div className="da-grid-4" style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:24}}>
               {product.variants.map((v,vi) => {
@@ -1144,6 +1172,37 @@ export default function DeeAprilB2B() {
                 )))}
               </div>
               <button onClick={saveInventory} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Save All</button>
+            </div>
+          )}
+        </div>
+
+        <div style={{background: "#000",borderRadius:12,border: "1px solid #2a2a2a",marginBottom:32}}>
+          <button onClick={()=>setAdminExpanded(adminExpanded==="buyers"?null:"buyers")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:FONT,color:"#fff"}}>
+            Buyers ({buyers.length})
+            <span style={{fontSize:16,color:"#888"}}>{adminExpanded==="buyers"?"−":"+"}</span>
+          </button>
+          {adminExpanded==="buyers" && (
+            <div style={{borderTop: "1px solid #222",padding:"20px"}}>
+              <div style={{marginBottom:24,maxHeight:300,overflowY:"auto"}}>
+                {buyers.map((b) => (
+                  <div key={b.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px",background: "#1a1a1a",borderRadius:8,marginBottom:8,fontSize:11}}>
+                    <div>
+                      <div style={{fontWeight:600}}>{b.email}</div>
+                      {b.company && <div style={{color: "#888",fontSize:10,marginTop:2}}>{b.company}</div>}
+                    </div>
+                  </div>
+                ))}
+                {buyers.length === 0 && <div style={{color: "#666",fontSize:11}}>No invited buyers yet.</div>}
+              </div>
+              <div style={{background: "#0a0a0a",padding:"16px",borderRadius:8}}>
+                <div style={{fontSize:11,fontWeight:600,marginBottom:12,letterSpacing:"0.08em",textTransform:"uppercase",color: "#888"}}>Invite New Buyer</div>
+                <div style={{display:"grid",gap:12,marginBottom:12}}>
+                  <input className="da-input" style={{...inputStyle,fontSize:11}} type="email" placeholder="Email" value={buyerManageForm.email} onChange={e=>setBuyerManageForm({...buyerManageForm,email:e.target.value})} />
+                  <input className="da-input" style={{...inputStyle,fontSize:11}} placeholder="Name / company (optional)" value={buyerManageForm.company} onChange={e=>setBuyerManageForm({...buyerManageForm,company:e.target.value})} />
+                </div>
+                <button onClick={inviteBuyer} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Invite Buyer</button>
+                <div style={{fontSize:10,color: "#666",marginTop:10,lineHeight:1.5}}>They'll get a welcome email explaining how the platform works — no password to set, they just sign in with a code.</div>
+              </div>
             </div>
           )}
         </div>

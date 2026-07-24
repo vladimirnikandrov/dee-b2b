@@ -1,6 +1,6 @@
 export const metadata = {
-  title: "Dee April Parfums — B2B Wholesale Portal",
-  description: "Browse Chapter I at wholesale prices, place orders, and generate invoices.",
+  title: "DEE — B2B Wholesale Portal",
+  description: "Browse the range at wholesale prices, place orders, and generate invoices.",
 };
 
 export default function RootLayout({ children }) {

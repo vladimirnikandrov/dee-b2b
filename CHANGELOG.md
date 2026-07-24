@@ -2,7 +2,7 @@
 
 All notable changes to **Dee April B2B** (order.deeapril.com / order.maison-dee.com).
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
-Deploys go via `railway up --ci --service web` (see `CLAUDE.md`), independent of git pushes — commits to `main` are the historical record, not a deploy trigger. As of 2026-07-18, every deployed change gets a dated entry here **and** a same-session push to GitHub — see the standing workflow rule at the top of `CLAUDE.md`. Versions referenced from the Vercel era (e.g. "v9") are informal milestones kept for history.
+As of 2026-07-24, the `web` service is connected directly to this repo's `main` branch on Railway — every push auto-deploys, no CLI/token needed. Before that, deploys went via `railway up --ci --service web` independent of git pushes; see `CLAUDE.md`. As of 2026-07-18, every deployed change also gets a dated entry here in the same session — see the standing workflow rule at the top of `CLAUDE.md`. Versions referenced from the Vercel era (e.g. "v9") are informal milestones kept for history.
 
 ---
 
@@ -10,12 +10,23 @@ Deploys go via `railway up --ci --service web` (see `CLAUDE.md`), independent of
 
 Nothing in progress. Don't start any of these without an explicit ask from Vladimir.
 
-1. **"Maison Dee" rebrand** — switch the primary domain from `order.deeapril.com` to `order.maison-dee.com` (both live, but code still defaults to the old one); move the sender/reply email off `order@deeapril.com`; new logo files (`public/images/logo-black.png`/`logo-white.png` are still the old Dee April mark).
-2. **Tester / Discovery Kit product photos** — the SKUs already exist in `lib/products.js` but have no image, so they don't render in the catalog at all. Needs real photography from Dorte.
-3. **Move IT infrastructure off Vladimir's personal accounts onto Dorte's own** — Railway, Resend, Cloudflare DNS (`deeapril.com`/`maison-dee.com`/`maisondeeapril.com`), and the GitHub repo are all currently under Vladimir's accounts. Domain registrar ownership hasn't been checked. e-conomic does *not* need migration — already on Dorte's own agreement.
-4. **`app/DeeAprilB2B.js` is still a ~1430-line monolith** — no routing, all views/state in one file. Not urgent, but worth splitting if the app keeps growing.
-5. **No TypeScript, no automated tests** — on a money/invoice app, this is still true. Nothing has caught a bug yet, but it's a standing risk on VAT math / pricing changes.
-6. **Fire-and-forget emails and e-conomic sync silently swallow failures** — intentional (a Resend or e-conomic outage must never block an order), but there's no admin-visible alert when something actually fails, only a server log line. Worth a lightweight "last sync failed" indicator in the admin panel at some point.
+1. **Move IT infrastructure off Vladimir's personal accounts onto Dorte's own** — Railway, Resend, Cloudflare DNS (`deeapril.com`/`maison-dee.com`/`maisondeeapril.com`), and the GitHub repo are all currently under Vladimir's accounts. Domain registrar ownership hasn't been checked. e-conomic does *not* need migration — already on Dorte's own agreement.
+2. **`app/DeeAprilB2B.js` is still a ~1450-line monolith** — no routing, all views/state in one file. Not urgent, but worth splitting if the app keeps growing.
+3. **No TypeScript, no automated tests** — on a money/invoice app, this is still true. Nothing has caught a bug yet, but it's a standing risk on VAT math / pricing changes.
+4. **Fire-and-forget emails and e-conomic sync silently swallow failures** — intentional (a Resend or e-conomic outage must never block an order), but there's no admin-visible alert when something actually fails, only a server log line. Worth a lightweight "last sync failed" indicator in the admin panel at some point.
+5. **DEE 04, DEE 05, and DISCOVER ME are placeholder-priced** — WSP/RRP for DEE 04/05 were copied from DEE 01-03 as a stand-in (not real production items yet). Confirm real pricing before setting their stock above zero.
+
+---
+
+## 2026-07-24 — Rename to DEE, new buyer invite flow, Railway auto-deploy
+
+**Catalog rename** — no more named collections. "Parfum"/"Parfum I"/"Parfum II" (same SKUs/EANs) are now **DEE 01/02/03**; added two new fragrances **DEE 04** and **DEE 05** (placeholder pricing, zero stock); "Discovery Kit" renamed to **DISCOVER ME**, now with a real product photo. All three new/renamed zero-stock items need their `inventory` rows confirmed via Admin → Inventory after this deploy (new SKUs default to 0 automatically on first Save; DISCOVER ME's existing stock needs zeroing by hand since it already had a row).
+
+**Brand copy** — every customer-facing "Dee April Parfums" / "April" reference replaced with "DEE": page titles, logo alt text, login-code email subject, admin welcome email, all three legal pages (privacy policy, EULA, DPA), landing copy ("Chapter I" → "the range"). The actual company/legal entity (DA Design ApS, CVR 45305481) and the `deeapril.com` domain are unchanged — this was a brand-copy change, not a legal or infrastructure one. New wordmark logo (`public/images/logo-white.png`/`logo-black.png`) generated to match — plain "DEE" in Helvetica Bold, replacing the old logo image that had "April" baked into the artwork itself.
+
+**New: invite buyers from the admin panel** — a "Buyers" section (mirrors the existing "Admins" section) lets an admin add a wholesale buyer by email straight from the admin panel. Creates the account and immediately sends a warm welcome email (`buyer_welcome` template in `lib/email.js`) explaining passwordless login and how ordering works. New route: `app/api/admin/buyers/route.js`.
+
+**Railway now auto-deploys from GitHub** — connected the `web` service's Source directly to this repo's `main` branch (previously deploys were a separate manual `railway up --ci` step with an ephemeral CLI token). Every push to `main` now triggers a Railway build automatically — see the updated note at the top of this file and in `CLAUDE.md`.
 
 ---
 

@@ -19,6 +19,8 @@ See also: [`README.md`](./README.md) for setup, [`CHANGELOG.md`](./CHANGELOG.md)
 
 Do this **before** ending the turn, not as a separate follow-up. The whole point is that GitHub always mirrors what's actually deployed — if this repo is ever handed to another developer, `git clone` should produce exactly what's running in production, with a changelog explaining how it got there. Before 2026-07-18 this rule did not exist and the repo drifted ~3 months out of sync with production (see CHANGELOG "2026-07-18 — Documentation & backup recovery" entry) — don't let that happen again.
 
+**Since 2026-07-24, step 5 also deploys** — Railway's `web` service auto-deploys from this repo's `main` branch (see Deployment section below), so `git push origin main` is no longer just a backup step, it's the actual deploy trigger. Don't push anything to `main` that isn't meant to go live immediately.
+
 ## Tech Stack
 - **Frontend**: React 19 (JSX, inline styles — NO Tailwind), Next.js 15 App Router (`"use client"`)
 - **Backend**: Railway Postgres (plain SQL via the `postgres` npm package — no ORM, no RLS), Next.js API Routes handle all authorization in code
@@ -146,18 +148,18 @@ See [`.env.local.example`](./.env.local.example) for the full list with descript
 
 ## Domains
 - `order.deeapril.com` — original domain, still the default (`SITE_URL` fallback in `lib/email.js`).
-- `order.maison-dee.com` — added 2026-07 as the first step toward a possible "Maison Dee" rebrand. Both domains serve the identical Railway app right now; nothing else about the rebrand (logo, copy, sender email) has started. See CHANGELOG backlog.
+- `order.maison-dee.com` — added 2026-07. Both domains serve the identical Railway app. The brand itself was renamed to plain **"DEE"** on 2026-07-24 (see CHANGELOG) — the domain question (which URL becomes primary, whether the sender email moves off `deeapril.com`) is separate and still open, don't assume either domain "wins" just because of the brand name.
 - DNS for both (plus the defensively-registered `maisondeeapril.com`) is on Cloudflare, currently under Vladimir's personal account — flagged in the backlog to eventually move to Dorte's own accounts (Railway, Resend, Cloudflare, GitHub) alongside the domain registrar itself.
 
 ## Git Workflow
 ```bash
 git add <specific files>   # never `git add -A` — Dropbox drops .DS_Store files everywhere
 git commit -m "description"
-git push origin main       # deploys are separate — see below, this does NOT auto-deploy
+git push origin main       # this now triggers a live Railway deploy automatically — see below
 ```
-**Deploys are manual, not git-triggered**: `railway up --ci --service web` (needs `RAILWAY_API_TOKEN` env var set, not `RAILWAY_TOKEN` — that name is for project-scoped tokens and silently fails `railway whoami`). Pushing to GitHub and deploying to Railway are two separate steps — do both. See the standing workflow rule at the top of this file.
+**Deploys auto-trigger from GitHub as of 2026-07-24**: the `web` service's Source is connected directly to this repo's `main` branch on Railway — every push builds and deploys automatically, no CLI or token needed. Before that date, deploys were a separate manual `railway up --ci --service web` step (needs `RAILWAY_API_TOKEN` env var, not `RAILWAY_TOKEN`) — that command still works if you ever need to force a deploy without pushing (e.g. testing an uncommitted change), but the normal path is just `git push`.
 
 ## Style & Communication
 - Client emails: always professional, concise, no fluff.
 - Code: pragmatic, ship-ready, no over-engineering. Inline styles, single-file components are OK.
-- UI: dark luxury aesthetic, minimal, Dee April brand language.
+- UI: dark luxury aesthetic, minimal, DEE brand language.

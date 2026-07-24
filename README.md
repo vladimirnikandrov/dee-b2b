@@ -75,19 +75,15 @@ Full file-by-file breakdown and the reasoning behind key decisions: [`CLAUDE.md`
 
 ## Deployment
 
-Two separate steps — neither one triggers the other:
+Pushing to `main` deploys automatically — Railway's `web` service is connected directly to this repo (since 2026-07-24):
 
 ```bash
-# 1. Push to GitHub (backup + history — always do this)
 git add <files>
 git commit -m "description"
-git push origin main
-
-# 2. Deploy to Railway (this is what actually goes live)
-railway up --ci --service web   # needs RAILWAY_API_TOKEN set (not RAILWAY_TOKEN)
+git push origin main   # builds and deploys on Railway automatically, no token needed
 ```
 
-Verify locally before deploying anything non-trivial:
+Verify locally before pushing anything non-trivial:
 
 ```bash
 npm run build

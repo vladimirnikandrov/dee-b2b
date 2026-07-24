@@ -1,14 +1,14 @@
 import { LegalPage, H2, P, Ul } from "../legal-layout";
 
-export const metadata = { title: "Terms of Use — Dee April Parfums B2B" };
+export const metadata = { title: "Terms of Use — DEE B2B" };
 
 export default function Eula() {
   return (
     <LegalPage title="Terms of Use (EULA)" updated="13 July 2026">
       <P>
-        The "Dee B2B" application and the Dee April Parfums wholesale portal (order.deeapril.com,
+        The "Dee B2B" application and the DEE wholesale portal (order.deeapril.com,
         order.maison-dee.com) are built and operated by PROJECT 1804 for the sole use of DA Design ApS
-        (Dee April Parfums) and its wholesale customers. This is a private, internal integration — it is not licensed
+        (DEE) and its wholesale customers. This is a private, internal integration — it is not licensed
         or made available to any other company.
       </P>
 

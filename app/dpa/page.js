@@ -1,14 +1,14 @@
 import { LegalPage, H2, P, Ul } from "../legal-layout";
 
-export const metadata = { title: "Data Processing Agreement — Dee April Parfums B2B" };
+export const metadata = { title: "Data Processing Agreement — DEE B2B" };
 
 export default function Dpa() {
   return (
     <LegalPage title="Data Processing Agreement" updated="13 July 2026">
       <P>
         This Data Processing Agreement ("DPA") forms part of the arrangement between DA Design ApS
-        (Dee April Parfums), Piniehøj 17, 2960 Rungsted Kyst, Denmark ("Controller") and PROJECT 1804
-        ("Processor"), covering personal data processed through the Dee April Parfums B2B wholesale portal and its
+        (DEE), Piniehøj 17, 2960 Rungsted Kyst, Denmark ("Controller") and PROJECT 1804
+        ("Processor"), covering personal data processed through the DEE B2B wholesale portal and its
         "Dee B2B" e-conomic integration.
       </P>
 
