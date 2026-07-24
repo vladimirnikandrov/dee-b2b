@@ -18,6 +18,10 @@ Nothing in progress. Don't start any of these without an explicit ask from Vladi
 
 ---
 
+## 2026-07-24 (later still) — Logo left-alignment fix
+
+The "DEE" wordmark PNGs had the text horizontally centered inside a fixed-width canvas, which left invisible padding on the left — looked fine standalone but sat away from the edge in the left-aligned header. Regenerated both (`logo-white.png`/`logo-black.png`) with the canvas cropped tight to the glyphs, flush left.
+
 ## 2026-07-24 (later same day) — Variant ordering, inventory backfill
 
 Catalog variants within each product now list smallest to largest (2 / 20 / 50 / 100 ML) — was largest-to-smallest before. Same reorder applied to the admin promo-code editor's per-size price grid for consistency. Also backfilled production `inventory` rows via the live admin API: DEE 04, DEE 05 (all 4 sizes each) created at stock 0, and DISCOVER ME's pre-existing stock (100, left over from "Discovery Kit") zeroed out — all three are correctly "Out of Stock" now rather than just missing/stale rows.
