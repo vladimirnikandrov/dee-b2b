@@ -17,6 +17,10 @@ The longstanding tech-debt items previously listed here (monolith split, no TS/t
 
 ---
 
+## 2026-07-24 (latest) — sync_failures migration applied to production
+
+Ran `db/migration-004-sync-failures.sql` against production via a temporary admin-gated `POST /api/admin/migrate` route (added, called once via the real admin OTP session, confirmed the table exists via `GET /api/admin/sync-failures` returning `{"failures":[]}`, then removed — its job was done, no reason to leave a schema-migration endpoint sitting in the admin panel). The "Sync Failures" admin panel section now actually has something to read from.
+
 ## 2026-07-24 (latest) — Split app/DeeB2B.js into per-view components
 
 Addresses the last standing tech-debt item: the ~1450-line single-file monolith is now `app/DeeB2B.js` (state, server calls, routing — unchanged logic) plus seven presentational view components under `app/components/`: `LandingView`, `ProfileView`, `CatalogView`, `CheckoutView`, `MyOrdersView`, `AdminView` (the biggest, ~330 lines — promo codes, inventory, buyers, admins, sync failures, error log, company cards, orders table), and `InvoiceView`. Shared building blocks (`Logo`, `Toast`, `ConfirmModal`, `NoteSection`, `AuthScreen`, `Header`/`UserNav`, constants) live in `app/components/shared.js`, imported directly by whichever views need them rather than passed down as props.
