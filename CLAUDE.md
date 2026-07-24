@@ -35,7 +35,11 @@ Do this **before** ending the turn, not as a separate follow-up. The whole point
 ## File Structure
 ```
 app/
-  DeeB2B.js                    — Main monolith (~1430 lines). ALL UI, state, client-side logic.
+  DeeB2B.js                    — All state, server calls, and view routing (~830 lines). Renders whichever view component matches `view`.
+  components/
+    shared.js                  — Constants (FONT, ORDER_STATUSES, ...) and small building blocks (Logo, Toast, ConfirmModal, NoteSection, AuthScreen, Header/UserNav) reused across views.
+    LandingView.js, ProfileView.js, CatalogView.js, CheckoutView.js, MyOrdersView.js, InvoiceView.js — one view each, receive exactly the state/handlers their JSX needs as named props.
+    AdminView.js                — The biggest one (~330 lines): promo codes, inventory, buyers, admins, sync failures, error log, company cards, orders table.
   layout.js                         — Next.js root layout
   page.js                           — Renders <DeeB2B />
   legal-layout.js                   — Shared layout for the legal pages below
@@ -92,7 +96,7 @@ jsconfig.json                       — Enables `@/*` path alias
 **Note on `lib/products.js`**: no named collections (renamed 2026-07-24) — every fragrance is just "DEE 0X", variants ordered smallest to largest (2/20/50/100 ML). DEE 04, DEE 05, and DISCOVER ME exist in the catalog but ship at zero stock (real pricing/photos for 04/05 still pending) — see CHANGELOG backlog.
 
 ## Architecture Decisions
-- **Single-file frontend**: Everything in `DeeB2B.js` (views, components, state). No routing — view state managed via `useState`. Still true; hasn't been split out.
+- **View state, not URL routing**: `DeeB2B.js` still switches on a `view` string via `useState` rather than Next.js routes — that part is unchanged. Split into per-view components 2026-07-24 (see File Structure above) — all state/handlers still live in `DeeB2B.js`, views are presentational and receive what they need as props.
 - **Dark mode everywhere**: Backgrounds `#000` / `#111` / `#1a1a1a`, text `#fff` / `#eee`, borders `#333` / `#444`. Floating elements (cart bar, toast) are WHITE on dark.
 - **Inline styles only**: No CSS files, no Tailwind. All styling via `style={{}}` props.
 - **Server-authoritative everything**: pricing (`lib/pricing.js`), PDF generation, and email content are all re-derived from the DB by `orderId` server-side — never trust a client-submitted `order`/`data` payload. This was a deliberate fix during the 2026-07 migration (the old Supabase-era code trusted the client for this).

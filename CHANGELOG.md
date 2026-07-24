@@ -14,9 +14,15 @@ Nothing in progress. Don't start any of these without an explicit ask from Vladi
 2. **Switch sender/reply email to `order@maison-dee.com`** — blocked on Dorte creating that mailbox (not done yet as of 2026-07-24). Once it exists: update `RESEND_FROM_EMAIL` in Railway, `lib/seller.js`'s `email` field, and verify the new sending domain in Resend.
 3. **Apply `db/migration-004-sync-failures.sql` to production** — the "Sync Failures" admin panel section (2026-07-24) is deployed but has no table to read from yet; wasn't able to run this one through the Railway dashboard's Data tab from this session (canvas-rendered, not readable). The feature degrades safely without it (fails silently, doesn't touch order/email flow) but won't show anything real until this runs.
 
-The longstanding tech-debt items previously listed here (monolith split, no TS/tests, silent sync failures) are being worked through as of 2026-07-24 — see the dated entries below.
+The longstanding tech-debt items previously listed here (monolith split, no TS/tests, silent sync failures) have all been worked through as of 2026-07-24 — see the dated entries below.
 
 ---
+
+## 2026-07-24 (latest) — Split app/DeeB2B.js into per-view components
+
+Addresses the last standing tech-debt item: the ~1450-line single-file monolith is now `app/DeeB2B.js` (state, server calls, routing — unchanged logic) plus seven presentational view components under `app/components/`: `LandingView`, `ProfileView`, `CatalogView`, `CheckoutView`, `MyOrdersView`, `AdminView` (the biggest, ~330 lines — promo codes, inventory, buyers, admins, sync failures, error log, company cards, orders table), and `InvoiceView`. Shared building blocks (`Logo`, `Toast`, `ConfirmModal`, `NoteSection`, `AuthScreen`, `Header`/`UserNav`, constants) live in `app/components/shared.js`, imported directly by whichever views need them rather than passed down as props.
+
+This was a pure structural refactor — every view's JSX moved verbatim, no behavior changed. Verified by hand against the real (local `.env.local`, same production data) app: logged in as admin via the real OTP flow, walked through Landing → Admin login → Admin panel (promo codes/inventory/buyers/admins/companies/orders all rendering real data) → Catalog (correct stock badges, 2/20/50/100 ML order) → Checkout (correct VAT/shipping/total math on a real line item) → My Orders → Shipping Invoice (real historical order, all figures correct) → Profile. No new test coverage needed since the underlying logic in `lib/` (already covered by the Vitest suite) didn't change.
 
 ## 2026-07-24 (latest) — Admin-visible alert for failed emails/e-conomic syncs
 
