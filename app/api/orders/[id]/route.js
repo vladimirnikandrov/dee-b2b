@@ -2,14 +2,28 @@ import { NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 import { requireAuth, requireAdmin } from "@/lib/auth";
 import { toEnrichedOrder } from "@/lib/orders";
+import { SHIPPING_FLAT } from "@/lib/products";
 
 async function loadOrder(id) {
   const [row] = await sql`select * from orders where id = ${id}`;
   return row;
 }
 
-function canEdit(row) {
-  return !row.cancelled && !row.status_balance_paid;
+// Admins keep broad latitude to fix an order up until it's fully paid.
+// Buyers get the same window they have for self-cancel (see
+// app/api/orders/[id]/cancel/route.js): only while nothing has happened yet.
+// Otherwise a buyer could silently change quantities after the full invoice
+// PDF was emailed and the matching draft booked into e-conomic.
+function canEdit(row, isAdmin) {
+  if (row.cancelled || row.status_balance_paid) return false;
+  if (isAdmin) return true;
+  return (
+    !row.status_deposit_paid &&
+    !row.status_packed &&
+    !row.status_balance_invoiced &&
+    !row.status_shipped &&
+    !row.status_received
+  );
 }
 
 // Edit line-item quantities on an existing order. Only quantities on lines
@@ -28,7 +42,9 @@ export async function PATCH(request, { params }) {
   if (session.role !== "admin" && row.user_id !== session.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  if (!canEdit(row)) return NextResponse.json({ error: "This order can no longer be edited" }, { status: 409 });
+  if (!canEdit(row, session.role === "admin")) {
+    return NextResponse.json({ error: "This order can no longer be edited" }, { status: 409 });
+  }
 
   const { qtyUpdates } = await request.json();
   if (!qtyUpdates || typeof qtyUpdates !== "object") {
@@ -51,7 +67,7 @@ export async function PATCH(request, { params }) {
   const vatRate = Number(row.vat_rate);
   const newVatAmount = Math.round(newTotalWSP * vatRate * 100) / 100;
   const totalBeforeShipping = newTotalWSP + newVatAmount;
-  const newShippingAmount = newLines.reduce((s, l) => s + l.qty, 0) > 0 ? Number(row.shipping_amount) || 35 : 0;
+  const newShippingAmount = newLines.reduce((s, l) => s + l.qty, 0) > 0 ? Number(row.shipping_amount) || SHIPPING_FLAT : 0;
   const newTotalWithVat = totalBeforeShipping + newShippingAmount;
   // No 30/70 split — deposit_amount is the shipping-only first invoice,
   // balance_amount the full order value (see lib/pricing.js).

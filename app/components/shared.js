@@ -2,7 +2,7 @@
 // Shared primitives used across every view: constants, small presentational
 // components, and the page-chrome (Header/UserNav) that closes over live
 // app state via explicit props rather than the parent's closures.
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { LOGO_WHITE, LOGO_BLACK } from "@/lib/assets";
 
 export const FONT = "'Helvetica Neue', Helvetica, Arial, sans-serif";
@@ -17,25 +17,32 @@ export const ORDER_STATUSES = [
   { key: "received", label: "Received" },
 ];
 
-export const PROMO_CODES_DEFAULT = [
-  { code: "MOODSCENTBAR", label: "B2VIP", discount_type: "fixed_prices", prices: { "100 ML": 48, "50 ML": 35, "20 ML": 16, "2 ML": 2, "KIT": 8 } }
-];
-
-export function generateOrderNumber() { const d=new Date(); return `DA-${d.getFullYear().toString().slice(-2)}${String(d.getMonth()+1).padStart(2,"0")}-${Math.floor(Math.random()*9000)+1000}`; }
-
 const CSS = `
   @keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
   @keyframes slideUp { from { opacity:0; transform:translateY(40px); } to { opacity:1; transform:translateY(0); } }
   @keyframes slideUpCenter { from { opacity:0; transform:translateX(-50%) translateY(40px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
   @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
   @keyframes scaleIn { from { opacity:0; transform:scale(0.95); } to { opacity:1; transform:scale(1); } }
-  @keyframes toastIn { from { opacity:0; transform:translateY(20px) scale(0.95); } to { opacity:1; transform:translateY(0) scale(1); } }
-  @keyframes toastOut { from { opacity:1; transform:translateY(0); } to { opacity:0; transform:translateY(20px); } }
+  @keyframes fadeOut { from { opacity:1; } to { opacity:0; } }
+  @keyframes scaleOut { from { opacity:1; transform:scale(1); } to { opacity:0; transform:scale(0.96); } }
+  /* One keyframe covers the toast's whole life — rise in, hold, fade out —
+     so the exit can't desync from the hide timer. Every step repeats the
+     translateX(-50%) that centres it: a keyframe animating transform without
+     it would override the inline centring and shift the toast half a width
+     off-centre for the duration of the animation. */
+  @keyframes toastInOut {
+    0%   { opacity:0; transform:translateX(-50%) translateY(20px) scale(0.95); }
+    8%   { opacity:1; transform:translateX(-50%) translateY(0) scale(1); }
+    91%  { opacity:1; transform:translateX(-50%) translateY(0) scale(1); }
+    100% { opacity:0; transform:translateX(-50%) translateY(12px) scale(0.97); }
+  }
   .da-btn { transition: all 0.25s cubic-bezier(0.23,1,0.32,1); }
-  .da-btn:hover { transform:translateY(-1px); box-shadow:0 4px 16px rgba(0,0,0,0.12); }
-  .da-btn-outline:hover { background:#000 !important; color:#fff !important; }
+  .da-btn:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(0,0,0,0.45); }
+  .da-btn:active { transform:translateY(0); }
+  .da-btn-outline:hover { background:#000 !important; color:#fff !important; border-color:#555 !important; }
   .da-btn-outline-light:hover { background:#fff !important; color:#000 !important; }
   .da-input:focus { border-color:#666 !important; }
+  button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid #8a8a8a; outline-offset: 2px; }
   .da-qty-btn:hover { background: #333 !important; }
   .da-qty-btn:active { background: #444 !important; }
   .da-status-step { transition:all 0.2s ease; cursor:pointer; user-select:none; }
@@ -46,6 +53,19 @@ const CSS = `
   input[type=number]::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
   input[type=number] { -moz-appearance:textfield; }
   ::selection { background: #333; color: #fff; }
+  /* Dark scrollbars — the default light ones cut hard against #000 panels. */
+  * { scrollbar-color: #333 transparent; scrollbar-width: thin; }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 6px; border: 2px solid #000; }
+  *::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-delay: 0ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
   @media (max-width: 768px) {
     .da-pad { padding-left: 20px !important; padding-right: 20px !important; }
     .da-grid-4 { grid-template-columns: 1fr 1fr !important; }
@@ -60,10 +80,13 @@ const CSS = `
     .da-admin-details { grid-template-columns: 1fr !important; }
     .da-checkout-summary { border-left: none !important; border-top: 1px solid #222 !important; }
     .da-order-actions { flex-direction: column; align-items: stretch !important; }
-    .da-floating-bar { left: 16px !important; right: 16px !important; transform: none !important; max-width: none !important; }
+    .da-floating-bar { left: 16px !important; right: 16px !important; transform: none !important; max-width: none !important; gap: 12px !important; padding: 14px 16px 14px 20px !important; justify-content: space-between; }
+    .da-grid-inv { grid-template-columns: 1fr 1fr !important; }
+    .da-grid-promo { grid-template-columns: 1fr 1fr !important; }
   }
   @media (max-width: 480px) {
     .da-grid-4 { grid-template-columns: 1fr !important; }
+    .da-excl-vat { display: none; }
   }
 `;
 
@@ -103,7 +126,7 @@ export function QtyInput({ value, onChange, max }) {
   const atMax = max !== undefined && max !== null && value >= max;
   const s = {width:32,height:32,border:"none",background:"transparent",cursor:"pointer",fontSize:14,color:"#aaa",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:FONT,padding:0};
   const clamp = (v) => { let n = Math.max(0, v); if (max !== undefined && max !== null) n = Math.min(n, max); return n; };
-  return (<div style={{display:"inline-flex",alignItems:"center",borderRadius:8,border:`1px solid ${atMax?"#eab308":"#444"}`,overflow:"hidden",background: "#000"}}><button className="da-qty-btn" onClick={()=>onChange(Math.max(0,value-1))} style={s}>−</button><input type="number" min="0" max={max} value={value} onChange={(e)=>onChange(clamp(parseInt(e.target.value)||0))} style={{width:36,height:32,border:"none",borderLeft: "1px solid #333",borderRight: "1px solid #333",textAlign:"center",fontSize:12,fontWeight:500,fontFamily:FONT,outline:"none",background:"transparent",padding:0,color:"#fff"}}/><button className="da-qty-btn" onClick={()=>onChange(clamp(value+1))} style={{...s,opacity:atMax?0.3:1,cursor:atMax?"default":"pointer"}}>+</button></div>);
+  return (<div style={{display:"inline-flex",alignItems:"center",borderRadius:8,border:`1px solid ${atMax?"#eab308":"#444"}`,overflow:"hidden",background: "#000"}}><button className="da-qty-btn" onClick={()=>onChange(Math.max(0,value-1))} style={s}>−</button><input type="number" min="0" max={max} value={value} onFocus={(e)=>e.target.select()} onChange={(e)=>onChange(clamp(parseInt(e.target.value)||0))} style={{width:36,height:32,border:"none",borderLeft: "1px solid #333",borderRight: "1px solid #333",textAlign:"center",fontSize:12,fontWeight:500,fontFamily:FONT,outline:"none",background:"transparent",padding:0,color:"#fff"}}/><button className="da-qty-btn" onClick={()=>onChange(clamp(value+1))} style={{...s,opacity:atMax?0.3:1,cursor:atMax?"default":"pointer"}}>+</button></div>);
 }
 
 export function FadeIn({ children, delay = 0, style = {} }) {
@@ -114,12 +137,27 @@ export function FadeIn({ children, delay = 0, style = {} }) {
    TOAST
    ═══════════════════════════════════════════ */
 
-export function Toast({ message, visible, onHide }) {
-  useEffect(() => { if (visible) { const t = setTimeout(onHide, 2800); return () => clearTimeout(t); } }, [visible, onHide]);
-  if (!visible) return null;
+// The visible toast lives in its own component so hiding it unmounts the
+// timer with it, and its entrance/exit is a single CSS animation sized to the
+// same duration as the hide timer — the two can't drift apart, and there's no
+// lingering "closing" flag to leak into the next toast.
+function ToastBody({ message, onHide, bottom }) {
+  // Longer messages get more reading time (errors are the long ones).
+  const total = Math.min(6000, 2200 + String(message || "").length * 45);
+  useEffect(() => {
+    const done = setTimeout(onHide, total);
+    return () => clearTimeout(done);
+  }, [total, onHide]);
   return (
-    <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",background:"#fff",color:"#000",padding:"14px 28px",borderRadius:14,fontSize:12,fontWeight:500,letterSpacing:"0.04em",fontFamily:FONT,zIndex:100,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",animation:"toastIn 0.3s ease",pointerEvents:"none",whiteSpace:"nowrap"}}>{message}</div>
+    <div style={{position:"fixed",bottom,left:"50%",transform:"translateX(-50%)",background:"#fff",color:"#000",padding:"14px 28px",borderRadius:14,fontSize:12,fontWeight:500,letterSpacing:"0.04em",lineHeight:1.5,fontFamily:FONT,zIndex:100,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",animation:`toastInOut ${total}ms ease forwards`,pointerEvents:"none",maxWidth:"min(520px, calc(100vw - 40px))",boxSizing:"border-box",textAlign:"center"}}>{message}</div>
   );
+}
+
+export function Toast({ message, visible, onHide, bottom = 28 }) {
+  if (!visible) return null;
+  // Keyed on the message so a back-to-back toast remounts and restarts its
+  // own timer rather than inheriting the previous one's remaining time.
+  return <ToastBody key={message} message={message} onHide={onHide} bottom={bottom} />;
 }
 
 /* ═══════════════════════════════════════════
@@ -127,10 +165,25 @@ export function Toast({ message, visible, onHide }) {
    ═══════════════════════════════════════════ */
 
 export function ConfirmModal({ open, title, message, confirmLabel, cancelLabel, onConfirm, onCancel, danger }) {
-  if (!open) return null;
+  // Stay mounted briefly after `open` flips false so the close can animate
+  // instead of the dialog vanishing on the same frame.
+  const [render, setRender] = useState(open);
+  useEffect(() => {
+    if (open) { setRender(true); return; }
+    const t = setTimeout(() => setRender(false), 170);
+    return () => clearTimeout(t);
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === "Escape") onCancel(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onCancel]);
+
+  if (!render) return null;
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,backdropFilter:"blur(4px)",animation:"fadeIn 0.15s ease"}} onClick={onCancel}>
-      <div onClick={e=>e.stopPropagation()} style={{background: "#111",borderRadius:20,padding:"36px 32px 28px",maxWidth:380,width:"90%",boxShadow:"0 20px 60px rgba(0,0,0,0.15)",animation:"scaleIn 0.2s ease"}}>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,backdropFilter:"blur(4px)",animation:open?"fadeIn 0.15s ease":"fadeOut 0.17s ease forwards"}} onClick={onCancel}>
+      <div onClick={e=>e.stopPropagation()} style={{background: "#111",borderRadius:20,padding:"36px 32px 28px",maxWidth:380,width:"90%",border:"1px solid #262626",boxShadow:"0 24px 70px rgba(0,0,0,0.65)",animation:open?"scaleIn 0.2s ease":"scaleOut 0.17s ease forwards"}}>
         <div style={{fontSize:15,fontWeight:600,marginBottom:8,fontFamily:FONT}}>{title}</div>
         <div style={{fontSize:13,color: "#888",lineHeight:1.7,marginBottom:28,fontFamily:FONT}}>{message}</div>
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
@@ -171,7 +224,11 @@ export function NoteSection({ orderId, notes, isAdminView, noteInputs, setNoteIn
    AUTH SCREEN
    ═══════════════════════════════════════════ */
 
-export function AuthScreen({ title, fields, onSubmit, submitLabel, altText, altAction, altLabel, authError, adminError, onBack }) {
+// Wrapped in a real <form> so Enter submits on every auth screen (it's a
+// one-field flow on three of them — having to reach for the mouse was pure
+// friction). Every other button inside therefore needs type="button", or it
+// would submit the form too.
+export function AuthScreen({ title, fields, onSubmit, submitLabel, altText, altAction, altLabel, authError, onBack, busy }) {
   return (
     <div style={{...base,background: "#000",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh"}}>
       <div style={{width:"100%",maxWidth:380,padding:"0 24px",boxSizing:"border-box"}}>
@@ -180,15 +237,16 @@ export function AuthScreen({ title, fields, onSubmit, submitLabel, altText, altA
           <div style={{fontSize:9,letterSpacing:"0.3em",textTransform:"uppercase",color: "#666",marginTop:20}}>{title}</div>
         </div>
         {authError && <div style={{background:"#2a0a0a",border:"1px solid #8b4545",borderRadius:10,padding:"10px 16px",fontSize:12,color:"#dc2626",marginBottom:20,animation:"fadeUp 0.3s ease"}}>{authError}</div>}
-        {adminError && <div style={{background:"#2a0a0a",border:"1px solid #8b4545",borderRadius:10,padding:"10px 16px",fontSize:12,color:"#dc2626",marginBottom:20,animation:"fadeUp 0.3s ease"}}>{adminError}</div>}
-        <FadeIn delay={0.15}>
-          <div style={{display:"flex",flexDirection:"column",gap:16}}>{fields}</div>
-        </FadeIn>
-        <FadeIn delay={0.3}>
-          <button className="da-btn" onClick={onSubmit} style={{width:"100%",background:"#000",color:"#fff",border:"none",padding:"16px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,marginTop:24}}>{submitLabel}</button>
-          {altText && <div style={{textAlign:"center",marginTop:20}}><button onClick={altAction} style={{background:"none",border:"none",fontSize:12,color: "#666",cursor:"pointer",fontFamily:FONT}}>{altText} <span style={{color: "#fff",fontWeight:500}}>{altLabel}</span></button></div>}
-          <div style={{textAlign:"center",marginTop:12}}><button onClick={onBack} style={{background:"none",border:"none",fontSize:11,color: "#999",cursor:"pointer",fontFamily:FONT}}>← Back</button></div>
-        </FadeIn>
+        <form onSubmit={(e) => { e.preventDefault(); if (!busy) onSubmit(); }}>
+          <FadeIn delay={0.15}>
+            <div style={{display:"flex",flexDirection:"column",gap:16}}>{fields}</div>
+          </FadeIn>
+          <FadeIn delay={0.3}>
+            <button type="submit" className="da-btn" disabled={busy} style={{width:"100%",background:"#000",color:"#fff",border:"none",padding:"16px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:busy?"default":"pointer",opacity:busy?0.55:1,fontFamily:FONT,marginTop:24,transition:"opacity 0.2s"}}>{busy ? "Please wait…" : submitLabel}</button>
+            {altText && <div style={{textAlign:"center",marginTop:20}}><button type="button" onClick={altAction} style={{background:"none",border:"none",fontSize:12,color: "#666",cursor:"pointer",fontFamily:FONT}}>{altText} <span style={{color: "#fff",fontWeight:500}}>{altLabel}</span></button></div>}
+            <div style={{textAlign:"center",marginTop:12}}><button type="button" onClick={onBack} style={{background:"none",border:"none",fontSize:11,color: "#999",cursor:"pointer",fontFamily:FONT}}>← Back</button></div>
+          </FadeIn>
+        </form>
       </div>
     </div>
   );

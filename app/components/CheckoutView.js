@@ -1,16 +1,22 @@
 "use client";
 import { SIZE_LABELS, formatEUR } from "@/lib/format";
-import { base, FadeIn, Toast, ConfirmModal, Header, UserNav, inputStyle, labelStyle, FONT } from "./shared";
+import { base, FadeIn, ConfirmModal, Header, UserNav, inputStyle, labelStyle, FONT } from "./shared";
 
 export default function CheckoutView({
   session, view, setView, currentUser, handleLogout,
   buyer, setBuyer, vatInfo,
   promoCodeInput, setPromoCodeInput, applyPromoCode, appliedPromo, promoError,
   orderLines, totalWSP, vatAmount, shippingAmount, totalWithVat, depositInvoiceTotal,
-  submitting, orderNumber, askConfirm, closeConfirm, confirm, handleSubmitOrder,
-  toast, hideToast,
+  submitting, askConfirm, closeConfirm, confirm, handleSubmitOrder,
 }) {
-  const canSubmit = buyer.company && buyer.address && buyer.city && buyer.country && buyer.email;
+  // Naming the missing fields beats a permanently-greyed button with no
+  // explanation — the buyer otherwise has to guess which one is blank.
+  const required = [
+    ["Company name", buyer.company], ["Address", buyer.address], ["City", buyer.city],
+    ["Country", buyer.country], ["Email", buyer.email],
+  ];
+  const missing = required.filter(([, v]) => !(v || "").trim()).map(([k]) => k);
+  const canSubmit = missing.length === 0 && orderLines.length > 0;
   return (
     <div style={base}>
       <Header right={<UserNav view={view} setView={setView} session={session} currentUser={currentUser} handleLogout={handleLogout} />} currentUser={currentUser} setView={setView} />
@@ -61,14 +67,15 @@ export default function CheckoutView({
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}><div><div style={{fontSize:10,textTransform:"uppercase",letterSpacing:"0.1em",color: "#666"}}>Shipping Invoice</div><div style={{fontSize:10,color: "#999",marginTop:2}}>Due now — full order invoiced separately</div></div><span style={{fontSize:20,fontWeight:600}}>{formatEUR(depositInvoiceTotal)}</span></div>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:20}}>
-                <button className="da-btn" onClick={()=>{if(canSubmit&&!submitting){askConfirm({title:"Confirm Order",message:`Place order ${orderNumber} for ${formatEUR(totalWithVat)}? A shipping invoice of ${formatEUR(depositInvoiceTotal)} will be generated now.`,confirmLabel:"Place Order",danger:false,onConfirm:async ()=>{closeConfirm();await handleSubmitOrder();}});}}} disabled={!canSubmit||submitting} style={{width:"100%",background:canSubmit&&!submitting?"#fff":"#333",color:canSubmit&&!submitting?"#000":"#666",border:"none",padding:"14px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:canSubmit&&!submitting?"pointer":"default",fontFamily:FONT}}>{submitting?"Placing Order...":"Place Order"}</button>
+                <button className="da-btn" onClick={()=>{if(canSubmit&&!submitting){askConfirm({title:"Confirm Order",message:`Place this order for ${formatEUR(totalWithVat)}? A shipping invoice of ${formatEUR(depositInvoiceTotal)} will be generated now.`,confirmLabel:"Place Order",danger:false,onConfirm:async ()=>{closeConfirm();await handleSubmitOrder();}});}}} disabled={!canSubmit||submitting} style={{width:"100%",background:canSubmit&&!submitting?"#fff":"#333",color:canSubmit&&!submitting?"#000":"#666",border:"none",padding:"14px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:canSubmit&&!submitting?"pointer":"default",fontFamily:FONT}}>{submitting?"Placing Order...":"Place Order"}</button>
+                {missing.length > 0 && orderLines.length > 0 && <div style={{fontSize:10,color:"#b45309",textAlign:"center",lineHeight:1.6,letterSpacing:"0.02em"}}>Required: {missing.join(" · ")}</div>}
+                {orderLines.length === 0 && <div style={{fontSize:10,color:"#b45309",textAlign:"center",lineHeight:1.6,letterSpacing:"0.02em"}}>Your cart is empty</div>}
                 <button className="da-btn da-btn-outline" onClick={()=>setView("catalog")} style={{width:"100%",background:"transparent",border: "1px solid #222",padding:"12px",borderRadius:12,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color: "#eee",transition:"all 0.25s"}}>Back to Catalog</button>
               </div>
             </div>
           </div></FadeIn>
         </div>
       </div>
-      <Toast message={toast.message} visible={toast.visible} onHide={hideToast} />
       <ConfirmModal {...confirm} onCancel={closeConfirm} />
     </div>
   );

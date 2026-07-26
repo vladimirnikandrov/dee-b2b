@@ -1,15 +1,46 @@
+import { requireAdmin } from "@/lib/auth";
+
 // e-conomic redirects here (GET, ?token=xxx) after an accounting user
 // authorizes the app via the InstallationURL. The token is the
 // AgreementGrantToken — there's no API to receive it programmatically,
 // e-conomic's own docs say to pick it up from this GET and handle it
 // yourself. We just display it so it can be copied into the
 // ECONOMIC_AGREEMENT_GRANT_TOKEN Railway env var (see lib/economic.js).
+//
+// Admin-gated, and the token is HTML-escaped before being rendered: this
+// route reflects an attacker-controllable query param into an HTML response
+// on our own origin, so without both guards it was a reflected-XSS hole that
+// would run fully authenticated as whoever opened the link (the session
+// cookie is sameSite:"lax", which still sends it on a top-level navigation).
+// Because a 403 discards the token, re-running the e-conomic authorization
+// flow has to be done from a browser already signed in as an admin here.
+
+// Same escaping as lib/email.js — kept local so this route has no reason to
+// import the email module.
+function escapeHtml(value) {
+  if (value === null || value === undefined) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export async function GET(request) {
+  const session = await requireAdmin();
+  if (!session) {
+    return new Response("Forbidden — sign in as an admin first, then re-run the e-conomic authorization.", {
+      status: 403,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+
   const token = new URL(request.url).searchParams.get("token");
 
   const body = token
     ? `<p>Copy this into the <code>ECONOMIC_AGREEMENT_GRANT_TOKEN</code> Railway env var, then redeploy:</p>
-       <div class="token">${token}</div>`
+       <div class="token">${escapeHtml(token)}</div>`
     : `<p class="err">No token was included in this redirect — the authorization may not have completed.</p>`;
 
   const html = `<!DOCTYPE html>

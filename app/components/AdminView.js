@@ -1,27 +1,28 @@
 "use client";
 import { PRODUCTS } from "@/lib/products";
 import { SIZE_LABELS, formatEUR } from "@/lib/format";
-import { base, Toast, ConfirmModal, Header, NoteSection, inputStyle, labelStyle, FONT, ORDER_STATUSES } from "./shared";
+import { base, ConfirmModal, Header, NoteSection, inputStyle, labelStyle, FONT, ORDER_STATUSES } from "./shared";
 
 export default function AdminView({
   setView, currentUser, handleLogout,
   adminExpanded, setAdminExpanded,
   promoCodes, adminPromoForm, setAdminPromoForm, savePromoCode, deletePromoCode,
-  inventory, setInventory, saveInventory,
+  inventory, setInventory, saveInventory, inventoryLoaded, inventoryDirty,
   buyers, buyerManageForm, setBuyerManageForm, inviteBuyer,
   admins, adminManageForm, setAdminManageForm, addAdmin, removeAdmin, session,
   syncFailures, resolveSyncFailure,
   errorLog, setErrorLog, showToast,
-  allOrders, adminCompanyFilter, setAdminCompanyFilter, adminStatusFilter, setAdminStatusFilter, exportCSV,
+  allOrders, adminCompanyFilter, setAdminCompanyFilter, adminStatusFilter, setAdminStatusFilter, adminSearch, setAdminSearch, exportCSV,
   editingOrderId, setEditingOrderId, editQtys, setEditQtys, getStock, handleUpdateOrder,
   toggleOrderStatus, handleViewInvoice, cancelOrder, restoreOrder, deleteOrder,
   noteInputs, setNoteInputs, addNote,
-  toast, hideToast, confirm, closeConfirm,
+  confirm, closeConfirm,
 }) {
   const companies = [...new Set(allOrders.map(o => o.buyer.company).filter(Boolean))].sort();
   const companyStats = companies.map(c => {
     const orders = allOrders.filter(o => o.buyer.company === c);
-    const total = orders.reduce((s, o) => s + (o.totalWithVat || 0), 0);
+    // Cancelled orders aren't revenue.
+    const total = orders.filter(o => !o.cancelled).reduce((s, o) => s + (o.totalWithVat || 0), 0);
     const active = orders.filter(o => !o.cancelled).length;
     return { name: c, count: orders.length, active, total };
   });
@@ -32,7 +33,13 @@ export default function AdminView({
     { key: "cancelled", label: "Cancelled" },
     ...ORDER_STATUSES.map(s => ({ key: s.key, label: s.label }))
   ];
+  const q = (adminSearch || "").trim().toLowerCase();
   const filtered = allOrders.filter(o => {
+    if (q && !(
+      o.id.toLowerCase().includes(q) ||
+      (o.buyer.email || "").toLowerCase().includes(q) ||
+      (o.buyer.company || "").toLowerCase().includes(q)
+    )) return false;
     if (adminCompanyFilter && o.buyer.company !== adminCompanyFilter) return false;
     if (adminStatusFilter === "all") return true;
     if (adminStatusFilter === "active") return !o.cancelled;
@@ -58,7 +65,7 @@ export default function AdminView({
                   <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px",background: "#1a1a1a",borderRadius:8,marginBottom:8,fontSize:11}}>
                     <div>
                       <div style={{fontWeight:600}}>{p.code}</div>
-                      <div style={{color: "#888",fontSize:10,marginTop:2}}>{p.label} — {p.prices["2 ML"]}/{p.prices["20 ML"]}/{p.prices["50 ML"]}/{p.prices["100 ML"]}</div>
+                      <div style={{color: "#888",fontSize:10,marginTop:2}}>{p.label} — {p.prices["2 ML"]}/{p.prices["20 ML"]}/{p.prices["50 ML"]}/{p.prices["100 ML"]} · Kit {p.prices["KIT"]}</div>
                     </div>
                     <button onClick={()=>deletePromoCode(p.code)} style={{background:"#b91c1c",color:"#fff",border:"none",padding:"6px 12px",borderRadius:6,fontSize:10,cursor:"pointer",fontFamily:FONT,fontWeight:500}}>Delete</button>
                   </div>
@@ -69,7 +76,7 @@ export default function AdminView({
                 <div style={{display:"grid",gap:12,marginBottom:12}}>
                   <input className="da-input" style={{...inputStyle,fontSize:11}} placeholder="Code (e.g. MOODSCENTBAR)" value={adminPromoForm.code} onChange={e=>setAdminPromoForm({...adminPromoForm,code:e.target.value})} />
                   <input className="da-input" style={{...inputStyle,fontSize:11}} placeholder="Label (e.g. B2VIP)" value={adminPromoForm.label} onChange={e=>setAdminPromoForm({...adminPromoForm,label:e.target.value})} />
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
+                  <div className="da-grid-promo" style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
                     {["2 ML","20 ML","50 ML","100 ML","KIT"].map(size => {
                       const placeholderSize = {
                         "100 ML": "€ 100ml",
@@ -92,13 +99,13 @@ export default function AdminView({
 
         <div style={{background: "#000",borderRadius:12,border: "1px solid #2a2a2a",marginBottom:32}}>
           <button onClick={()=>setAdminExpanded(adminExpanded==="inventory"?null:"inventory")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:FONT,color:"#fff"}}>
-            Inventory
+            <span>Inventory{inventoryDirty && <span style={{fontSize:9,color:"#eab308",letterSpacing:"0.08em",marginLeft:10,fontWeight:400}}>UNSAVED</span>}</span>
             <span style={{fontSize:16,color:"#888"}}>{adminExpanded==="inventory"?"−":"+"}</span>
           </button>
           {adminExpanded==="inventory" && (
             <div style={{borderTop: "1px solid #222",padding:"20px"}}>
               <div style={{fontSize:10,color: "#666",marginBottom:16,letterSpacing:"0.08em",textTransform:"uppercase",fontWeight:600}}>Current Stock</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16,maxHeight:"400px",overflowY:"auto"}}>
+              <div className="da-grid-inv" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16,maxHeight:"400px",overflowY:"auto"}}>
                 {PRODUCTS.map((p,pi) => p.variants.map((v,vi) => (
                   <div key={`${pi}-${vi}`} style={{padding:"12px",background: "#1a1a1a",borderRadius:8,border: "1px solid #222"}}>
                     <div style={{fontSize:10,fontWeight:600,color: "#eee",marginBottom:4}}>{p.name}</div>
@@ -107,7 +114,7 @@ export default function AdminView({
                   </div>
                 )))}
               </div>
-              <button onClick={saveInventory} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Save All</button>
+              <button onClick={saveInventory} disabled={!inventoryLoaded} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:inventoryLoaded?"pointer":"default",opacity:inventoryLoaded?1:0.4,fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Save All</button>
             </div>
           )}
         </div>
@@ -189,7 +196,7 @@ export default function AdminView({
                   <div key={f.id} style={{padding:"12px",background: "#1a1a1a",borderRadius:8,border:"1px solid #7c2d12",fontSize:11}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
                       <div>
-                        <div style={{fontWeight:600,color:"#f97316"}}>{f.type === "email" ? "Email" : "e-conomic"} — {f.context}{f.order_id && <span style={{color:"#888",fontWeight:400}}> · order {f.order_id}</span>}</div>
+                        <div style={{fontWeight:600,color:"#f97316"}}>{f.type === "email" ? "Email" : "e-conomic"} — {f.context}{f.order_id && <> · <button onClick={()=>{setAdminCompanyFilter(null);setAdminStatusFilter("all");setAdminSearch(f.order_id);setAdminExpanded(null);}} style={{background:"none",border:"none",padding:0,color:"#eee",fontSize:11,fontFamily:FONT,cursor:"pointer",textDecoration:"underline",textUnderlineOffset:2}}>order {f.order_id}</button></>}</div>
                         <div style={{color:"#999",fontSize:10,marginTop:4,fontFamily:"monospace",wordBreak:"break-all"}}>{f.error}</div>
                         <div style={{color:"#666",fontSize:9,marginTop:4}}>{new Date(f.created_at).toLocaleString("en-GB")}</div>
                       </div>
@@ -237,7 +244,7 @@ export default function AdminView({
               <button onClick={()=>setAdminCompanyFilter(null)} style={{padding:"16px",borderRadius:10,border:adminCompanyFilter===null?"2px solid #fff":"1px solid #333",background:adminCompanyFilter===null?"#000":"transparent",color:adminCompanyFilter===null?"#fff":"#ccc",cursor:"pointer",fontFamily:FONT,textAlign:"left",transition:"all 0.2s"}}>
                 <div style={{fontSize:11,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase"}}>All Companies</div>
                 <div style={{fontSize:20,fontWeight:600,marginTop:8}}>{allOrders.length}</div>
-                <div style={{fontSize:9,color:adminCompanyFilter===null?"rgba(255,255,255,0.6)":"#999",marginTop:2,letterSpacing:"0.06em",textTransform:"uppercase"}}>{formatEUR(allOrders.reduce((s,o)=>s+(o.totalWithVat||0),0))} total</div>
+                <div style={{fontSize:9,color:adminCompanyFilter===null?"rgba(255,255,255,0.6)":"#999",marginTop:2,letterSpacing:"0.06em",textTransform:"uppercase"}}>{formatEUR(allOrders.filter(o=>!o.cancelled).reduce((s,o)=>s+(o.totalWithVat||0),0))} total</div>
               </button>
               {companyStats.map(c => (
                 <button key={c.name} onClick={()=>setAdminCompanyFilter(c.name)} style={{padding:"16px",borderRadius:10,border:adminCompanyFilter===c.name?"2px solid #fff":"1px solid #333",background:adminCompanyFilter===c.name?"#000":"transparent",color:adminCompanyFilter===c.name?"#fff":"#ccc",cursor:"pointer",fontFamily:FONT,textAlign:"left",transition:"all 0.2s"}}>
@@ -252,8 +259,9 @@ export default function AdminView({
 
         {/* ── Orders Header + Filters ── */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:12}}>
-          <div style={{fontSize:15,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase"}}>Orders ({filtered.length}{adminCompanyFilter || adminStatusFilter !== "all" ? ` / ${allOrders.length}` : ""})</div>
-          <button className="da-btn" onClick={exportCSV} style={{background:"#000",color:"#fff",border:"none",padding:"11px 20px",borderRadius:10,fontSize:10,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>Export CSV</button>
+          <div style={{fontSize:15,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase"}}>Orders ({filtered.length}{adminCompanyFilter || adminStatusFilter !== "all" || q ? ` / ${allOrders.length}` : ""})</div>
+          <input className="da-input" placeholder="Search order #, email or company" value={adminSearch} onChange={e=>setAdminSearch(e.target.value)} style={{...inputStyle,width:260,padding:"9px 14px",fontSize:11,marginLeft:"auto",marginRight:10}} />
+          <button className="da-btn" onClick={()=>exportCSV(filtered)} style={{background:"#000",color:"#fff",border:"none",padding:"11px 20px",borderRadius:10,fontSize:10,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>Export CSV</button>
         </div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:24}}>
           {statusFilters.map(f => (
@@ -293,12 +301,14 @@ export default function AdminView({
                     <div style={{display:"grid",gap:8,marginBottom:12}}>
                       {order.lines.map((l,i) => {
                         const stock = getStock(l.sku);
-                        const maxVal = stock !== null ? stock : undefined;
+                        // Original qty + remaining free stock (the order's own
+                        // units aren't back in the pool while it's open).
+                        const maxVal = stock !== null ? l.qty + stock : undefined;
                         return (
                         <div key={i} style={{display:"grid",gridTemplateColumns:"1fr auto auto",gap:8,alignItems:"center",fontSize:11}}>
                           <span>{l.product} — {SIZE_LABELS[l.size]} @ {formatEUR(l.unitPrice)}</span>
-                          <input type="number" min="0" max={maxVal} style={{...inputStyle,width:60,padding:"6px 8px",fontSize:11}} value={editQtys[l.sku]!==undefined?editQtys[l.sku]:l.qty} onChange={e=>{const raw=e.target.value;if(raw===""){setEditQtys({...editQtys,[l.sku]:0});return;}let v=parseInt(raw,10)||0;if(stock!==null)v=Math.min(v,stock);setEditQtys({...editQtys,[l.sku]:Math.max(0,v)});}} />
-                          {stock !== null && <span style={{fontSize:9,color: "#666"}}>(max {stock})</span>}
+                          <input type="number" min="0" max={maxVal} style={{...inputStyle,width:60,padding:"6px 8px",fontSize:11}} value={editQtys[l.sku]!==undefined?editQtys[l.sku]:l.qty} onChange={e=>{const raw=e.target.value;if(raw===""){setEditQtys({...editQtys,[l.sku]:0});return;}let v=parseInt(raw,10)||0;if(stock!==null)v=Math.min(v,l.qty+stock);setEditQtys({...editQtys,[l.sku]:Math.max(0,v)});}} onFocus={e=>e.target.select()} />
+                          {stock !== null && <span style={{fontSize:9,color: "#666"}}>(max {l.qty + stock})</span>}
                         </div>
                         );
                       })}
@@ -342,7 +352,6 @@ export default function AdminView({
           </div>
         )}
       </div>
-      <Toast message={toast.message} visible={toast.visible} onHide={hideToast} />
       <ConfirmModal {...confirm} onCancel={closeConfirm} />
     </div>
   );

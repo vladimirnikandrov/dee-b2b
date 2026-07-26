@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { PRODUCTS, SHIPPING_FLAT } from "@/lib/products";
 import { getVatInfo } from "@/lib/vat";
 import {
-  base, useStyleInjection, generateOrderNumber, ORDER_STATUSES, PROMO_CODES_DEFAULT,
+  base, useStyleInjection, ORDER_STATUSES,
   Logo, Toast, ConfirmModal, AuthScreen, labelStyle, inputStyle,
 } from "./components/shared";
 import LandingView from "./components/LandingView";
@@ -43,20 +43,23 @@ export default function DeeB2B() {
   const [adminCompanyFilter, setAdminCompanyFilter] = useState(null);
   const [adminStatusFilter, setAdminStatusFilter] = useState("all");
   const [allOrders, setAllOrders] = useState([]);
+  const [ordersLoaded, setOrdersLoaded] = useState(false);
+  const [adminSearch, setAdminSearch] = useState("");
   const [quantities, setQuantities] = useState({});
   const [view, setView] = useState("landing");
   const [buyer, setBuyer] = useState({ company:"",address:"",city:"",country:"",zip:"",vat:"",email:"",contact:"" });
-  const [orderNumber, setOrderNumber] = useState(generateOrderNumber);
   const [viewingOrderId, setViewingOrderId] = useState(null);
   const pendingDeepOrder = useRef(null);
+  const profileLoaded = useRef(false);
   const viewRef = useRef(view);
   const [invoiceSource, setInvoiceSource] = useState(null);
   const [invoiceViewType, setInvoiceViewType] = useState("deposit"); // "deposit" or "balance"
-  const invoiceRef = useRef(null);
 
-  const [promoCode, setPromoCode] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
   const [appliedPromo, setAppliedPromo] = useState(null);
-  const [promoCodes, setPromoCodes] = useState(PROMO_CODES_DEFAULT);
+  // No hardcoded fallback: a phantom promo the server won't honor would let a
+  // buyer confirm a discounted total and then be invoiced full price.
+  const [promoCodes, setPromoCodes] = useState([]);
   const [promoError, setPromoError] = useState("");
   const [promoCodeInput, setPromoCodeInput] = useState("");
   const [adminPromoForm, setAdminPromoForm] = useState({ code: "", label: "", prices: { "100 ML": "", "50 ML": "", "20 ML": "", "2 ML": "", "KIT": "" } });
@@ -90,6 +93,11 @@ export default function DeeB2B() {
 
   // Feature 3: Inventory Management
   const [inventory, setInventory] = useState({});
+  const [inventorySaved, setInventorySaved] = useState({});
+  const [inventoryLoaded, setInventoryLoaded] = useState(false);
+  // Unsaved admin edits shouldn't be silently wiped by a background reload,
+  // and the admin should be able to see that they're unsaved.
+  const inventoryDirty = JSON.stringify(inventory) !== JSON.stringify(inventorySaved);
 
   const getQty = (sku) => quantities[sku] || 0;
   const getStock = (sku) => { const s = inventory[sku]; return (s !== undefined && s !== null) ? s : null; };
@@ -104,9 +112,10 @@ export default function DeeB2B() {
   PRODUCTS.forEach((p) => p.variants.forEach((v) => {
     const qty = getQty(v.sku);
     if (qty > 0) {
-      const unitPrice = appliedPromo?.discount_type === "fixed_prices" && appliedPromo.prices[v.size] !== undefined
-        ? appliedPromo.prices[v.size]
-        : v.wsp;
+      // Mirrors lib/pricing.js: only a real positive number overrides the
+      // catalog price, so an empty-string or 0 promo entry can't zero a line.
+      const promoPrice = appliedPromo?.discount_type === "fixed_prices" ? Number(appliedPromo.prices?.[v.size]) : NaN;
+      const unitPrice = Number.isFinite(promoPrice) && promoPrice > 0 ? promoPrice : v.wsp;
       orderLines.push({product:p.name,size:v.size,sku:v.sku,ean:v.ean,qty,unitPrice,total:qty*unitPrice});
       totalWSP += qty*unitPrice;
     }
@@ -155,10 +164,10 @@ export default function DeeB2B() {
       const res = await fetch("/api/promo-codes");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const { promoCodes: data } = await res.json();
-      setPromoCodes(data && data.length > 0 ? data : PROMO_CODES_DEFAULT);
+      setPromoCodes(data || []);
     } catch (e) {
       logError("loadPromoCodes", e.message || e);
-      setPromoCodes(PROMO_CODES_DEFAULT);
+      setPromoCodes([]);
     }
   };
 
@@ -171,13 +180,19 @@ export default function DeeB2B() {
       const inv = {};
       (rows || []).forEach((row) => { inv[row.sku] = row.stock; });
       setInventory(inv);
+      setInventorySaved(inv);
+      setInventoryLoaded(true);
     } catch (e) {
       logError("loadInventory", e.message || e);
-      setInventory({});
+      // Deliberately keep whatever was last loaded rather than wiping to {}:
+      // an empty map renders every admin input as 0, and one "Save All" click
+      // would then zero the entire live catalogue.
+      setInventoryLoaded(false);
     }
   };
 
   const saveInventory = async () => {
+    if (!inventoryLoaded) { showToast("Inventory not loaded — refresh before saving"); return; }
     try {
       const records = [];
       PRODUCTS.forEach(p => {
@@ -187,6 +202,7 @@ export default function DeeB2B() {
       });
       const res = await fetch("/api/inventory", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ records }) });
       if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `HTTP ${res.status}`); }
+      setInventorySaved({ ...inventory });
       showToast("Inventory saved");
     } catch (e) {
       logError("saveInventory", e.message || e); showToast("Error saving inventory: " + e.message);
@@ -203,6 +219,7 @@ export default function DeeB2B() {
       if (!data) return null;
       const mapped = { company: data.company||"", contact: data.contact||"", address: data.address||"", city: data.city||"", country: data.country||"", zip: data.zip||"", vat: data.vat||"", email: data.email||"" };
       setBuyer(mapped);
+      profileLoaded.current = true;
       return mapped;
     } catch (e) {
       logError("loadProfile", e.message || e);
@@ -216,26 +233,31 @@ export default function DeeB2B() {
       if (!res.ok) return;
       const { orders } = await res.json();
       setAllOrders(orders || []);
+      setOrdersLoaded(true);
     } catch (e) {
       logError("loadOrders", e.message || e);
     }
   };
 
   const saveProfile = async () => {
-    if (!session) return;
+    if (!session) return false;
     try {
       const res = await fetch("/api/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(buyer) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return true;
     } catch (e) {
       logError("saveProfile", e.message || e);
+      return false;
     }
   };
 
   // Buyers are passwordless: register/sign-in both end at the same "enter
   // the code we emailed you" screen.
   const handleRegister = async () => {
+    if (authBusy) return;
     setAuthError("");
     if (!authForm.company || !authForm.email) { setAuthError("Company name and email are required"); return; }
+    setAuthBusy(true);
     try {
       const res = await fetch("/api/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: authForm.email, company: authForm.company }) });
       const data = await res.json();
@@ -247,12 +269,16 @@ export default function DeeB2B() {
     } catch (e) {
       logError("handleRegister", e.message || e);
       setAuthError("Registration failed");
+    } finally {
+      setAuthBusy(false);
     }
   };
 
   const handleRequestOtp = async () => {
+    if (authBusy) return;
     setAuthError("");
     if (!authForm.email) { setAuthError("Enter your email address"); return; }
+    setAuthBusy(true);
     try {
       const res = await fetch("/api/auth/request-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: authForm.email }) });
       const data = await res.json();
@@ -262,12 +288,16 @@ export default function DeeB2B() {
       showToast("Code sent — check your email");
     } catch (e) {
       setAuthError("Something went wrong");
+    } finally {
+      setAuthBusy(false);
     }
   };
 
   const handleVerifyOtp = async () => {
+    if (authBusy) return;
     setAuthError("");
     if (!otpCode || otpCode.trim().length !== 6) { setAuthError("Enter the 6-digit code"); return; }
+    setAuthBusy(true);
     try {
       const res = await fetch("/api/auth/verify-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: otpEmail, code: otpCode.trim() }) });
       const data = await res.json();
@@ -276,20 +306,34 @@ export default function DeeB2B() {
       setOtpCode(""); setOtpEmail(""); setAuthForm({company:"",email:""});
       const profile = await loadProfile();
       await loadOrders();
-      setView(data.role === "admin" ? "admin" : "catalog");
+      // Someone who clicked an email CTA and had to sign in first should land
+      // on that order, not be dumped on the catalogue with the link lost.
+      if (pendingDeepOrder.current) {
+        setViewingOrderId(pendingDeepOrder.current);
+        setInvoiceSource("myorders");
+        setView("invoice");
+        pendingDeepOrder.current = null;
+      } else {
+        setView(data.role === "admin" ? "admin" : "catalog");
+      }
       showToast("Welcome" + (profile?.company ? ", " + profile.company : ""));
     } catch (e) {
       setAuthError("Verification failed");
+    } finally {
+      setAuthBusy(false);
     }
   };
 
   const handleLogout = async () => {
-    await saveProfile();
+    // Only persist if a profile was actually loaded into the form — otherwise
+    // signing out from a screen that never populated `buyer` would blank the
+    // saved profile.
+    if (profileLoaded.current) await saveProfile();
     try { await fetch("/api/auth/logout", { method: "POST" }); } catch (e) {}
     setSession(null); setQuantities({}); setView("landing");
     setBuyer({company:"",address:"",city:"",country:"",zip:"",vat:"",email:"",contact:""});
-    setOrderNumber(generateOrderNumber());
-    setPromoCode(""); setAppliedPromo(null);
+    profileLoaded.current = false;
+    setAppliedPromo(null);
   };
 
   const applyPromoCode = () => {
@@ -299,7 +343,6 @@ export default function DeeB2B() {
     const found = promoCodes.find(p => p.code.toUpperCase() === code);
     if (!found) { setPromoError("Invalid code"); return; }
     setAppliedPromo(found);
-    setPromoCode(code);
     showToast(`✓ ${found.label} pricing applied`);
     setPromoCodeInput("");
   };
@@ -326,8 +369,6 @@ export default function DeeB2B() {
       showToast("Order placed — " + placedOrderId);
       setQuantities({});
       setAppliedPromo(null);
-      setPromoCode("");
-      setOrderNumber(generateOrderNumber());
     } catch (e) {
       logError("handleSubmitOrder", e.message || e);
       showToast("Failed to place order");
@@ -341,7 +382,7 @@ export default function DeeB2B() {
   // Status toggling, email dispatch, and PDF generation are all handled
   // server-side now (app/api/orders/[id]/status/route.js) — this just
   // reflects the confirmed new statuses back into local state.
-  const toggleOrderStatus = async (orderId, key) => {
+  const doToggleStatus = async (orderId, key) => {
     try {
       const res = await fetch(`/api/orders/${orderId}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key }) });
       const data = await res.json();
@@ -351,6 +392,28 @@ export default function DeeB2B() {
       logError("toggleOrderStatus:" + key, e.message || e);
       showToast("Failed to update status");
     }
+  };
+
+  // Turning an invoice status ON emails the buyer a real invoice PDF, and
+  // balance_invoiced also pushes a draft into Dorte's live e-conomic account.
+  // The status pills sit 6px apart with a hover scale — one misclick shouldn't
+  // be able to do that. Turning a status OFF sends nothing, so it stays instant.
+  const toggleOrderStatus = (orderId, key) => {
+    const order = allOrders.find(o => o.id === orderId);
+    const turningOn = order && !order.statuses[key];
+    if (turningOn && (key === "balance_invoiced" || key === "deposit_invoiced")) {
+      const isBalance = key === "balance_invoiced";
+      askConfirm({
+        title: isBalance ? "Send Full Invoice" : "Send Shipping Invoice",
+        message: isBalance
+          ? `This emails ${order.buyer?.company || "the buyer"} the full invoice PDF for ${orderId} and creates a draft in e-conomic. Continue?`
+          : `This re-sends the shipping invoice PDF for ${orderId} to the buyer. Continue?`,
+        confirmLabel: "Send Invoice",
+        onConfirm: async () => { closeConfirm(); await doToggleStatus(orderId, key); },
+      });
+      return;
+    }
+    return doToggleStatus(orderId, key);
   };
 
   const restoreOrder = async (orderId) => {
@@ -450,17 +513,28 @@ export default function DeeB2B() {
   };
 
   const repeatOrder = (order) => {
+    // Clamp to current stock at duplication time — prefilling quantities that
+    // are no longer available just guarantees a rejection at submit.
     const newQtys = {};
-    order.lines.forEach(l => { newQtys[l.sku] = l.qty; });
+    let adjusted = false;
+    order.lines.forEach(l => {
+      const stock = getStock(l.sku);
+      const q = stock !== null ? Math.min(l.qty, stock) : l.qty;
+      if (q !== l.qty) adjusted = true;
+      if (q > 0) newQtys[l.sku] = q;
+    });
+    if (Object.keys(newQtys).length === 0) {
+      showToast("Items from this order are currently out of stock");
+      return;
+    }
     setQuantities(newQtys);
     setBuyer({...order.buyer});
-    setOrderNumber(generateOrderNumber());
     if (order.promoCode) {
       const promo = promoCodes.find(p => p.code === order.promoCode);
-      if (promo) { setAppliedPromo(promo); setPromoCode(order.promoCode); }
+      if (promo) setAppliedPromo(promo);
     }
     setView("checkout");
-    showToast("Order duplicated — review and confirm");
+    showToast(adjusted ? "Order duplicated — quantities adjusted to current stock" : "Order duplicated — review and confirm");
   };
 
   // isAdminView is no longer trusted for authorship — the server derives it
@@ -482,12 +556,16 @@ export default function DeeB2B() {
     }
   };
 
-  const exportCSV = () => {
-    const rows = [["Order ID","Date","Company","Email","Country","VAT Number","Items","Subtotal","VAT","Shipping","Total","Shipping Invoice","Status","Promo Code","Cancelled"]];
-    allOrders.forEach(o => {
+  // Exports whatever the admin is currently looking at (AdminView passes its
+  // filtered list), not always the full set — exporting 200 rows when the
+  // screen shows 3 is never what was meant.
+  const exportCSV = (list) => {
+    const rows = [["Order ID","Date","Company","Email","Country","VAT Number","Items","Subtotal","VAT","Shipping","Total","Shipping Invoice","Full Invoice","Status","Promo Code","Cancelled"]];
+    const money = (n) => (Number(n) || 0).toFixed(2);
+    (list || allOrders).forEach(o => {
       const items = o.lines.map(l => `${l.product} ${l.size} x${l.qty}`).join("; ");
       const statusStr = ORDER_STATUSES.filter(s => o.statuses[s.key]).map(s => s.label).join(", ");
-      rows.push([o.id, new Date(o.date).toLocaleDateString("en-GB"), o.buyer.company, o.buyer.email, o.buyer.country, o.buyer.vat||"", items, o.totalWSP.toFixed(2), o.vatAmount.toFixed(2), o.shipping.toFixed(2), o.totalWithVat.toFixed(2), o.depositAmount.toFixed(2), statusStr, o.promoCode||"", o.cancelled?"Yes":"No"]);
+      rows.push([o.id, new Date(o.date).toISOString().slice(0,10), o.buyer.company, o.buyer.email, o.buyer.country, o.buyer.vat||"", items, money(o.totalWSP), money(o.vatAmount), money(o.shipping), money(o.totalWithVat), money(o.depositAmount), money(o.balanceAmount), statusStr, o.promoCode||"", o.cancelled?"Yes":"No"]);
     });
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], {type:"text/csv"});
@@ -501,7 +579,7 @@ export default function DeeB2B() {
   // every field itself, rather than trusting a client-built payload.
   const handlePrint = async () => {
     const invType = invoiceViewType || "deposit";
-    const orderId = viewingOrderId || orderNumber;
+    const orderId = viewingOrderId;
     try {
       const res = await fetch("/api/generate-invoice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId, type: invType, format: "download" }) });
       if (!res.ok) { logError("handlePrint", `HTTP ${res.status}`); showToast("PDF generation failed"); return; }
@@ -515,6 +593,15 @@ export default function DeeB2B() {
   const savePromoCode = async () => {
     if (!adminPromoForm.code.trim()) { showToast("Code required"); return; }
     if (!adminPromoForm.label.trim()) { showToast("Label required"); return; }
+    const SIZES = ["2 ML","20 ML","50 ML","100 ML","KIT"];
+    const missingPrices = SIZES.filter(sz => {
+      const n = Number(adminPromoForm.prices[sz]);
+      return adminPromoForm.prices[sz] === "" || !Number.isFinite(n) || n <= 0;
+    });
+    if (missingPrices.length) { showToast("Valid price required for " + missingPrices.join(", ")); return; }
+    if (promoCodes.some(pc => pc.code.toUpperCase() === adminPromoForm.code.trim().toUpperCase())) {
+      showToast("That code already exists"); return;
+    }
     try {
       const res = await fetch("/api/promo-codes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: adminPromoForm.code, label: adminPromoForm.label, prices: adminPromoForm.prices }) });
       const data = await res.json();
@@ -528,16 +615,26 @@ export default function DeeB2B() {
     }
   };
 
-  const deletePromoCode = async (code) => {
-    try {
-      const res = await fetch(`/api/promo-codes?code=${encodeURIComponent(code)}`, { method: "DELETE" });
-      if (!res.ok) { const data = await res.json().catch(() => ({})); showToast(data.error || "Failed to delete promo code"); return; }
-      setPromoCodes(prev => prev.filter(p => p.code !== code));
-      showToast("Promo code deleted");
-    } catch (e) {
-      logError("deletePromoCode", e.message || e);
-      showToast("Failed to delete promo code");
-    }
+  const deletePromoCode = (code) => {
+    askConfirm({
+      title: "Delete Promo Code",
+      message: `Delete ${code}? Its pricing table can't be recovered, and buyers won't be able to apply it to new orders.`,
+      confirmLabel: "Delete",
+      danger: true,
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/promo-codes?code=${encodeURIComponent(code)}`, { method: "DELETE" });
+          if (!res.ok) { const data = await res.json().catch(() => ({})); showToast(data.error || "Failed to delete promo code"); return; }
+          setPromoCodes(prev => prev.filter(p => p.code !== code));
+          showToast("Promo code deleted");
+        } catch (e) {
+          logError("deletePromoCode", e.message || e);
+          showToast("Failed to delete promo code");
+        } finally {
+          closeConfirm();
+        }
+      },
+    });
   };
 
   const loadSyncFailures = async () => {
@@ -642,10 +739,16 @@ export default function DeeB2B() {
     if (view === "admin") loadAdmins();
     if (view === "admin") loadBuyers();
     if (view === "admin") loadSyncFailures();
-    if (view === "catalog") loadInventory();
+    if (view === "catalog" && !inventoryDirty) loadInventory();
   }, [view]);
 
-  if (loading) return (
+  // Each view is assigned rather than early-returned so a single Toast can
+  // sit outside all of them: it used to be mounted per-view, so any toast
+  // fired from the invoice or auth screens never rendered and then popped up
+  // stale on the next screen that did mount one.
+  let viewEl = null;
+
+  if (loading) viewEl = (
     <div style={{...base,display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh"}}>
       <div style={{textAlign:"center"}}>
         <Logo style={{ height: 28, opacity: 0.3 }} />
@@ -654,79 +757,82 @@ export default function DeeB2B() {
     </div>
   );
 
-  if (view === "landing") return <LandingView setView={setView} />;
+  else if (view === "landing") viewEl = <LandingView setView={setView} />;
 
-  if (view === "register") return <AuthScreen title="New Account" fields={[<div key="co"><label style={labelStyle}>Company Name *</label><input className="da-input" style={inputStyle} value={authForm.company} onChange={e=>setAuthForm({...authForm,company:e.target.value})} placeholder="Your company"/></div>,<div key="em"><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})} placeholder="name@company.com"/></div>]} onSubmit={handleRegister} submitLabel="Create Account" altText="Already have an account?" altAction={()=>setView("login")} altLabel="Sign In" authError={authError} onBack={()=>setView("landing")} />;
+  else if (view === "register") viewEl = <AuthScreen title="New Account" fields={[<div key="co"><label style={labelStyle}>Company Name *</label><input className="da-input" style={inputStyle} value={authForm.company} onChange={e=>setAuthForm({...authForm,company:e.target.value})} placeholder="Your company"/></div>,<div key="em"><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})} placeholder="name@company.com"/></div>]} onSubmit={handleRegister} submitLabel="Create Account" altText="Already have an account?" altAction={()=>setView("login")} altLabel="Sign In" authError={authError} busy={authBusy} onBack={()=>setView("landing")} />;
 
-  if (view === "login") return <AuthScreen title="Sign In" fields={[<div key="em"><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})} placeholder="name@company.com"/></div>,<div key="msg" style={{fontSize:11,color: "#666",lineHeight:1.6}}>We'll email you a 6-digit code — no password needed.</div>]} onSubmit={handleRequestOtp} submitLabel="Send Code" altText="Need an account?" altAction={()=>setView("register")} altLabel="Create one" authError={authError} onBack={()=>setView("landing")} />;
+  else if (view === "login") viewEl = <AuthScreen title="Sign In" fields={[<div key="em"><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})} placeholder="name@company.com"/></div>,<div key="msg" style={{fontSize:11,color: "#666",lineHeight:1.6}}>We'll email you a 6-digit code — no password needed.</div>]} onSubmit={handleRequestOtp} submitLabel="Send Code" altText="Need an account?" altAction={()=>setView("register")} altLabel="Create one" authError={authError} busy={authBusy} onBack={()=>setView("landing")} />;
 
-  if (view === "otp") return <AuthScreen title="Enter Your Code" fields={[<div key="msg" style={{fontSize:12,color: "#888",textAlign:"center",lineHeight:1.7,marginBottom:4}}>We sent a 6-digit code to<br/><span style={{color:"#fff",fontWeight:500}}>{otpEmail}</span></div>,<div key="code"><label style={labelStyle}>Code *</label><input className="da-input" style={{...inputStyle,fontSize:22,letterSpacing:"0.3em",textAlign:"center"}} inputMode="numeric" maxLength={6} value={otpCode} onChange={e=>setOtpCode(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="000000"/></div>,<div key="resend" style={{textAlign:"center"}}><button onClick={handleRequestOtp} style={{background:"none",border:"none",fontSize:11,color: "#666",cursor:"pointer",fontFamily:"inherit"}}>Resend code</button></div>]} onSubmit={handleVerifyOtp} submitLabel="Verify & Sign In" authError={authError} onBack={()=>setView("landing")} />;
+  else if (view === "otp") viewEl = <AuthScreen title="Enter Your Code" fields={[<div key="msg" style={{fontSize:12,color: "#888",textAlign:"center",lineHeight:1.7,marginBottom:4}}>We sent a 6-digit code to<br/><span style={{color:"#fff",fontWeight:500}}>{otpEmail}</span></div>,<div key="code"><label style={labelStyle}>Code *</label><input className="da-input" style={{...inputStyle,fontSize:22,letterSpacing:"0.3em",textAlign:"center"}} inputMode="numeric" autoFocus autoComplete="one-time-code" maxLength={6} value={otpCode} onChange={e=>setOtpCode(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="000000"/></div>,<div key="resend" style={{textAlign:"center"}}><button type="button" onClick={handleRequestOtp} disabled={authBusy} style={{background:"none",border:"none",fontSize:11,color: "#666",cursor:authBusy?"default":"pointer",opacity:authBusy?0.5:1,fontFamily:"inherit"}}>Resend code</button></div>]} onSubmit={handleVerifyOtp} submitLabel="Verify & Sign In" authError={authError} busy={authBusy} onBack={()=>setView("landing")} />;
 
-  if (view === "adminlogin") return <AuthScreen title="Admin Access" fields={[<div key="em"><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})} placeholder="name@company.com"/></div>,<div key="msg" style={{fontSize:11,color: "#666",lineHeight:1.6}}>We'll email you a 6-digit code — no password needed.</div>]} onSubmit={handleRequestOtp} submitLabel="Send Code" authError={authError} onBack={()=>setView("landing")} />;
+  else if (view === "adminlogin") viewEl = <AuthScreen title="Admin Access" fields={[<div key="em"><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})} placeholder="name@company.com"/></div>,<div key="msg" style={{fontSize:11,color: "#666",lineHeight:1.6}}>We'll email you a 6-digit code — no password needed.</div>]} onSubmit={handleRequestOtp} submitLabel="Send Code" authError={authError} busy={authBusy} onBack={()=>setView("landing")} />;
 
-  if (view === "profile") return (
+  else if (view === "profile") viewEl = (
     <ProfileView
       session={session} view={view} setView={setView} currentUser={currentUser} handleLogout={handleLogout}
-      buyer={buyer} setBuyer={setBuyer} saveProfile={saveProfile} showToast={showToast} toast={toast} hideToast={hideToast}
+      buyer={buyer} setBuyer={setBuyer} saveProfile={saveProfile} showToast={showToast}
     />
   );
 
-  if (view === "catalog") return (
+  else if (view === "catalog") viewEl = (
     <CatalogView
       session={session} view={view} setView={setView} currentUser={currentUser} handleLogout={handleLogout}
       inventory={inventory} getQty={getQty} setQty={setQty} getStock={getStock}
       totalItems={totalItems} totalWSP={totalWSP}
-      toast={toast} hideToast={hideToast}
     />
   );
 
-  if (view === "checkout") return (
+  else if (view === "checkout") viewEl = (
     <CheckoutView
       session={session} view={view} setView={setView} currentUser={currentUser} handleLogout={handleLogout}
       buyer={buyer} setBuyer={setBuyer} vatInfo={vatInfo}
       promoCodeInput={promoCodeInput} setPromoCodeInput={setPromoCodeInput} applyPromoCode={applyPromoCode} appliedPromo={appliedPromo} promoError={promoError}
       orderLines={orderLines} totalWSP={totalWSP} vatAmount={vatAmount} shippingAmount={shippingAmount} totalWithVat={totalWithVat} depositInvoiceTotal={depositInvoiceTotal}
-      submitting={submitting} orderNumber={orderNumber} askConfirm={askConfirm} closeConfirm={closeConfirm} confirm={confirm} handleSubmitOrder={handleSubmitOrder}
-      toast={toast} hideToast={hideToast}
+      submitting={submitting} askConfirm={askConfirm} closeConfirm={closeConfirm} confirm={confirm} handleSubmitOrder={handleSubmitOrder}
     />
   );
 
-  if (view === "myorders") return (
+  else if (view === "myorders") viewEl = (
     <MyOrdersView
       session={session} view={view} setView={setView} currentUser={currentUser} handleLogout={handleLogout}
       allOrders={allOrders} editingOrderId={editingOrderId} setEditingOrderId={setEditingOrderId} editQtys={editQtys} setEditQtys={setEditQtys} getStock={getStock}
       handleUpdateOrder={handleUpdateOrder} handleViewInvoice={handleViewInvoice} repeatOrder={repeatOrder} toggleOrderStatus={toggleOrderStatus} canClientCancel={canClientCancel} cancelOrder={cancelOrder}
-      toast={toast} hideToast={hideToast} confirm={confirm} closeConfirm={closeConfirm}
+      confirm={confirm} closeConfirm={closeConfirm}
     />
   );
 
-  if (view === "admin") return (
+  else if (view === "admin") viewEl = (
     <AdminView
       setView={setView} currentUser={currentUser} handleLogout={handleLogout}
       adminExpanded={adminExpanded} setAdminExpanded={setAdminExpanded}
       promoCodes={promoCodes} adminPromoForm={adminPromoForm} setAdminPromoForm={setAdminPromoForm} savePromoCode={savePromoCode} deletePromoCode={deletePromoCode}
-      inventory={inventory} setInventory={setInventory} saveInventory={saveInventory}
+      inventory={inventory} setInventory={setInventory} saveInventory={saveInventory} inventoryLoaded={inventoryLoaded} inventoryDirty={inventoryDirty}
       buyers={buyers} buyerManageForm={buyerManageForm} setBuyerManageForm={setBuyerManageForm} inviteBuyer={inviteBuyer}
       admins={admins} adminManageForm={adminManageForm} setAdminManageForm={setAdminManageForm} addAdmin={addAdmin} removeAdmin={removeAdmin} session={session}
       syncFailures={syncFailures} resolveSyncFailure={resolveSyncFailure}
       errorLog={errorLog} setErrorLog={setErrorLog} showToast={showToast}
-      allOrders={allOrders} adminCompanyFilter={adminCompanyFilter} setAdminCompanyFilter={setAdminCompanyFilter} adminStatusFilter={adminStatusFilter} setAdminStatusFilter={setAdminStatusFilter} exportCSV={exportCSV}
+      allOrders={allOrders} adminCompanyFilter={adminCompanyFilter} setAdminCompanyFilter={setAdminCompanyFilter} adminStatusFilter={adminStatusFilter} setAdminStatusFilter={setAdminStatusFilter} adminSearch={adminSearch} setAdminSearch={setAdminSearch} exportCSV={exportCSV}
       editingOrderId={editingOrderId} setEditingOrderId={setEditingOrderId} editQtys={editQtys} setEditQtys={setEditQtys} getStock={getStock} handleUpdateOrder={handleUpdateOrder}
       toggleOrderStatus={toggleOrderStatus} handleViewInvoice={handleViewInvoice} cancelOrder={cancelOrder} restoreOrder={restoreOrder} deleteOrder={deleteOrder}
       noteInputs={noteInputs} setNoteInputs={setNoteInputs} addNote={addNote}
-      toast={toast} hideToast={hideToast} confirm={confirm} closeConfirm={closeConfirm}
+      confirm={confirm} closeConfirm={closeConfirm}
     />
   );
 
-  if (view === "invoice") return (
+  else if (view === "invoice") viewEl = (
     <InvoiceView
-      viewingOrderId={viewingOrderId} orderNumber={orderNumber} allOrders={allOrders} buyer={buyer} orderLines={orderLines}
+      viewingOrderId={viewingOrderId} allOrders={allOrders} ordersLoaded={ordersLoaded} buyer={buyer} orderLines={orderLines}
       totalWSP={totalWSP} vatInfo={vatInfo} vatAmount={vatAmount} shippingAmount={shippingAmount} totalWithVat={totalWithVat} depositAmount={depositAmount} depositInvoiceTotal={depositInvoiceTotal} totalBeforeShipping={totalBeforeShipping}
-      invoiceSource={invoiceSource} invoiceViewType={invoiceViewType} setInvoiceViewType={setInvoiceViewType} invoiceRef={invoiceRef}
-      setView={setView} setViewingOrderId={setViewingOrderId} setInvoiceSource={setInvoiceSource} setQuantities={setQuantities} setOrderNumber={setOrderNumber} setPromoCode={setPromoCode} setAppliedPromo={setAppliedPromo}
+      invoiceSource={invoiceSource} invoiceViewType={invoiceViewType} setInvoiceViewType={setInvoiceViewType}
+      setView={setView} setViewingOrderId={setViewingOrderId} setInvoiceSource={setInvoiceSource} setQuantities={setQuantities} setAppliedPromo={setAppliedPromo}
       handlePrint={handlePrint}
     />
   );
 
-  return null;
+  return (
+    <>
+      {viewEl}
+      <Toast message={toast.message} visible={toast.visible} onHide={hideToast} bottom={view === "catalog" && totalItems > 0 ? 104 : 28} />
+    </>
+  );
 }

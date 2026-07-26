@@ -1,29 +1,49 @@
 "use client";
 import { SELLER } from "@/lib/seller";
 import { SIZE_LABELS, formatEUR } from "@/lib/format";
-import { base, FadeIn, Logo, FONT, generateOrderNumber } from "./shared";
+import { base, FadeIn, Logo, FONT } from "./shared";
 
 export default function InvoiceView({
-  viewingOrderId, orderNumber, allOrders, buyer, orderLines,
+  viewingOrderId, allOrders, ordersLoaded, buyer, orderLines,
   totalWSP, vatInfo, vatAmount, shippingAmount, totalWithVat, depositAmount, depositInvoiceTotal, totalBeforeShipping,
-  invoiceSource, invoiceViewType, setInvoiceViewType, invoiceRef,
-  setView, setViewingOrderId, setInvoiceSource, setQuantities, setOrderNumber, setPromoCode, setAppliedPromo,
+  invoiceSource, invoiceViewType, setInvoiceViewType,
+  setView, setViewingOrderId, setInvoiceSource, setQuantities, setAppliedPromo,
   handlePrint,
 }) {
-  const displayId = viewingOrderId || orderNumber;
+  const displayId = viewingOrderId;
   const cur = allOrders.find(o => o.id === displayId);
-  const curDepositTotal = cur ? cur.depositAmount : depositInvoiceTotal;
-  const curBalance = cur ? cur.balanceAmount : totalBeforeShipping;
-  const inv = cur || {buyer,totalWSP,vatInfo,vatAmount,shipping:shippingAmount,totalWithVat,depositAmount,depositInvoiceTotal,balanceAmount:curBalance,lines:orderLines,cancelled:false};
-  if (cur && !cur.depositInvoiceTotal) inv.depositInvoiceTotal = curDepositTotal;
-  const invDate = cur ? new Date(cur.date) : new Date();
-  const due = new Date(invDate); due.setDate(due.getDate()+7);
-  const fmtDate = d => d.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});
+
   const handleBack = () => {
     if (invoiceSource==="admin") { setViewingOrderId(null);setInvoiceSource(null);setView("admin"); }
     else if (invoiceSource==="myorders") { setViewingOrderId(null);setInvoiceSource(null);setView("myorders"); }
-    else { setQuantities({});setOrderNumber(generateOrderNumber());setViewingOrderId(null);setInvoiceSource(null);setPromoCode("");setAppliedPromo(null);setView("catalog"); }
+    else { setQuantities({});setViewingOrderId(null);setInvoiceSource(null);setAppliedPromo(null);setView("catalog"); }
   };
+
+  // An emailed ?order= deep link lands here before the orders fetch resolves.
+  // Falling straight through to the live-cart fallback used to render a
+  // real-looking €0.00 invoice under the deep-linked order number — and it
+  // stayed there forever if the id was mistyped or belonged to someone else.
+  if (displayId && !cur) {
+    const notFound = ordersLoaded;
+    return (
+      <div style={{...base,background:"#0a0a0a",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh",padding:"40px 20px"}}>
+        <Logo style={{ height: 22, opacity: notFound ? 0.5 : 0.3 }} />
+        <div style={{fontSize:12,color:"#888",marginTop:20,letterSpacing:"0.08em",textTransform:"uppercase"}}>
+          {notFound ? "Order not found" : "Loading order…"}
+        </div>
+        {notFound && <div style={{fontSize:12,color:"#666",marginTop:10,textAlign:"center",lineHeight:1.7,maxWidth:340}}>We couldn't find <span style={{color:"#eee"}}>{displayId}</span> on your account. If it was placed with a different email, sign in with that one.</div>}
+        {notFound && <button className="da-btn da-btn-outline" onClick={()=>{setViewingOrderId(null);setInvoiceSource(null);setView("myorders");}} style={{marginTop:24,background:"transparent",border:"1px solid #222",padding:"11px 26px",borderRadius:10,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color:"#eee",transition:"all 0.25s"}}>My Orders</button>}
+      </div>
+    );
+  }
+
+  // Copy rather than mutate — `cur` is an object held in allOrders state.
+  const inv = cur
+    ? { ...cur, depositInvoiceTotal: cur.depositInvoiceTotal || cur.depositAmount }
+    : { buyer, totalWSP, vatInfo, vatAmount, shipping: shippingAmount, totalWithVat, depositAmount, depositInvoiceTotal, balanceAmount: totalBeforeShipping, lines: orderLines, cancelled: false };
+  const invDate = cur ? new Date(cur.date) : new Date();
+  const due = new Date(invDate); due.setDate(due.getDate()+7);
+  const fmtDate = d => d.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});
 
   return (
     <div style={{...base,background: "#0a0a0a"}}>
@@ -34,9 +54,11 @@ export default function InvoiceView({
         </div>
         <button className="da-btn" onClick={handlePrint} style={{background:"#000",color:"#fff",border:"none",padding:"11px 28px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>Save PDF</button>
       </div>
-      <FadeIn delay={0.1}><div className="da-invoice-pad" style={{maxWidth:760,margin:"32px auto",background: "#000",borderRadius:20,padding:"56px 52px",boxShadow:"0 4px 24px rgba(0,0,0,0.06)",position:"relative"}}>
-        {inv.cancelled && <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%) rotate(-30deg)",fontSize:60,fontWeight:900,color:"rgba(220,38,38,0.08)",letterSpacing:"0.1em",pointerEvents:"none",whiteSpace:"nowrap"}}>CANCELLED</div>}
-        <div ref={invoiceRef}>
+      <FadeIn delay={0.1}><div className="da-invoice-pad" style={{maxWidth:760,margin:"32px auto",background: "#000",borderRadius:20,padding:"56px 52px",border:"1px solid #1c1c1c",boxShadow:"0 4px 24px rgba(0,0,0,0.5)",position:"relative",overflow:"hidden"}}>
+        {/* 0.08 alpha red on a #000 card was effectively invisible — a
+            cancelled invoice looked identical to a live one on screen. */}
+        {inv.cancelled && <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%) rotate(-30deg)",fontSize:60,fontWeight:900,color:"rgba(220,38,38,0.30)",letterSpacing:"0.1em",pointerEvents:"none",whiteSpace:"nowrap"}}>CANCELLED</div>}
+        <div>
           {/* Invoice type toggle — only show if balance is available */}
           {cur && cur.statuses?.balance_invoiced && (
             <div style={{display:"flex",gap:8,marginBottom:20}}>

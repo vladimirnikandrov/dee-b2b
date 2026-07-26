@@ -16,17 +16,30 @@ export async function POST(request) {
     if (new Date(otp.expires_at) < new Date()) {
       return NextResponse.json({ error: "This code has expired — request a new one" }, { status: 400 });
     }
-    if (otp.attempts >= OTP_MAX_ATTEMPTS) {
+    // Claim an attempt atomically BEFORE comparing the code. Checking
+    // `attempts` and incrementing it in two separate statements let a burst of
+    // concurrent requests all read attempts=0 and each get a free guess, which
+    // turned the 5-attempt cap into "unlimited attempts per burst" against the
+    // app's only authentication factor. Concurrent updates to the same row
+    // serialize on Postgres' row lock, so this is a real ceiling.
+    const [attempt] = await sql`
+      update login_otps
+      set attempts = attempts + 1
+      where id = ${otp.id} and attempts < ${OTP_MAX_ATTEMPTS} and used_at is null
+      returning attempts, code
+    `;
+    if (!attempt) {
       return NextResponse.json({ error: "Too many attempts — request a new code" }, { status: 429 });
     }
 
-    if (otp.code !== code.trim()) {
-      await sql`update login_otps set attempts = attempts + 1 where id = ${otp.id}`;
-      const remaining = OTP_MAX_ATTEMPTS - (otp.attempts + 1);
+    if (attempt.code !== code.trim()) {
+      const remaining = Math.max(0, OTP_MAX_ATTEMPTS - attempt.attempts);
       return NextResponse.json({ error: `Incorrect code — ${remaining} attempt${remaining === 1 ? "" : "s"} left` }, { status: 400 });
     }
 
-    await sql`update login_otps set used_at = now() where id = ${otp.id}`;
+    // Retire every outstanding code for this email, not just the one used —
+    // otherwise an older code that was emailed but never consumed stays valid.
+    await sql`update login_otps set used_at = now() where email = ${email} and used_at is null`;
 
     const [user] = await sql`select id, email, role from users where email = ${email}`;
     if (!user) return NextResponse.json({ error: "Account not found" }, { status: 404 });

@@ -6,6 +6,7 @@ import { toEnrichedOrder, toFlatOrderData } from "@/lib/orders";
 import { sendTransactionalEmail } from "@/lib/email";
 import { generateInvoicePDF } from "@/lib/invoice-pdf";
 import { syncInvoiceToEconomic } from "@/lib/economic";
+import { recordSyncFailure } from "@/lib/sync-failures";
 
 // Buyers see only their own orders; admins see everyone's — same rule the
 // old client-side loadOrders()/allOrders filtering enforced, now actually
@@ -53,6 +54,12 @@ export async function POST(request) {
     let promo = null;
     if (promoCode) {
       [promo] = await sql`select * from promo_codes where code = ${promoCode.toUpperCase()}`;
+      // Refuse rather than silently pricing at full WSP: the buyer just
+      // confirmed a discounted total in the checkout dialog, so quietly
+      // dropping the promo would invoice them more than they agreed to.
+      if (!promo) {
+        return NextResponse.json({ error: "That promo code is no longer valid — remove it and try again" }, { status: 400 });
+      }
     }
 
     const pricing = computeOrderPricing({ items, buyerCountry: buyer.country, buyerVat: buyer.vat, promo });
@@ -111,7 +118,19 @@ export async function POST(request) {
         const pdfAttachment = { filename: `${order.id}-deposit-invoice.pdf`, base64: Buffer.from(buf).toString("base64") };
         return sendTransactionalEmail("order_placed_buyer", { ...flatOrder, pdfAttachment });
       })
-      .catch((e) => console.error("order_placed_buyer email failed:", e));
+      // A PDF failure used to mean the buyer got no confirmation at all, with
+      // nothing surfacing in the admin panel. Degrade to sending the email
+      // without the attachment (the template already tells them they can view
+      // it in their account) and record the failure either way.
+      .catch(async (e) => {
+        console.error("order_placed_buyer email failed:", e);
+        recordSyncFailure({ type: "email", orderId: order.id, context: "order_placed_buyer_pdf", error: e.message || String(e) });
+        try {
+          await sendTransactionalEmail("order_placed_buyer", flatOrder);
+        } catch (e2) {
+          console.error("order_placed_buyer fallback (no PDF) also failed:", e2);
+        }
+      });
     sendTransactionalEmail("order_placed_admin", flatOrder).catch((e) => console.error("order_placed_admin email failed:", e));
     syncInvoiceToEconomic(flatOrder, "deposit").catch((e) => console.error("e-conomic deposit sync failed:", e));
 

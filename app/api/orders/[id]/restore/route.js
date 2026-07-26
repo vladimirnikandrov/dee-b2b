@@ -18,6 +18,14 @@ export async function PATCH(request, { params }) {
   try {
     await sql.begin(async (tx) => {
       for (const line of row.lines || []) {
+        // A SKU with no inventory row isn't tracked at all — cancel didn't
+        // credit anything back for it, so there's nothing to re-deduct here.
+        // Without this check the decrement matches no row and the whole
+        // restore fails as "insufficient stock", permanently, for any order
+        // containing an untracked SKU.
+        const [tracked] = await tx`select sku from inventory where sku = ${line.sku}`;
+        if (!tracked) continue;
+
         const [ok] = await tx`
           update inventory set stock = stock - ${line.qty}, updated_at = now()
           where sku = ${line.sku} and stock >= ${line.qty}

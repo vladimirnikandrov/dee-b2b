@@ -12,12 +12,53 @@ Nothing in progress. Don't start any of these without an explicit ask from Vladi
 
 1. **Move Railway/Resend/GitHub off Vladimir's personal accounts onto Dorte's own** — Cloudflare and the domain registrar are sorted (per Vladimir, 2026-07-24); these three are what's left.
 2. **Switch sender/reply email to `order@maison-dee.com`** — blocked on Dorte creating that mailbox (not done yet as of 2026-07-24). Once it exists: update `RESEND_FROM_EMAIL` in Railway, `lib/seller.js`'s `email` field, and verify the new sending domain in Resend.
+3. **Decide the shipping-VAT question with Dorte's accountant** (surfaced by the 2026-07-26 audit, deliberately NOT changed unilaterally): the app charges €35 shipping with no VAT, but `lib/economic.js` sends that as `unitNetPrice` on a domestic-zone line, so e-conomic adds 25% and the draft reads €43.75 — the books disagree with the invoice for every DK / EU-without-VAT-ID order. Two possible fixes: charge VAT on freight in `lib/pricing.js` (likely the legally correct one for DK, but it changes real invoice totals and contradicts a pinned test), or send `amount / 1.25` for the deposit draft so the e-conomic gross matches the €35 invoiced. Needs an accounting decision first, then verification against a live test draft.
+4. **Free-text country field can misclassify VAT** (same audit): `lib/vat.js` matches EU membership on the exact English country name, so a buyer typing "Deutschland" or a typo falls through to 0% export instead of 25%. The fix is a country `<select>` storing the canonical English name — left out of this pass because existing `buyer_profiles` rows hold free text that must keep rendering, and `repeatOrder` copies old values straight back into checkout.
+5. **e-conomic balance drafts aren't idempotent**: toggling `balance_invoiced` off and on again posts a second draft into the live agreement. The 2026-07-26 pass added a confirmation dialog on invoice toggles (which removes the misclick path) but a real fix needs a `economic_balance_synced_at` column plus making `syncInvoiceToEconomic` report success — worth doing before the order volume grows.
 
 The longstanding tech-debt items previously listed here (monolith split, no TS/tests, silent sync failures) have all been worked through as of 2026-07-24 — see the dated entries below. DEE 04/05 pricing confirmed fine as-is (Vladimir, 2026-07-24) — no longer a backlog item.
 
 ---
 
-## 2026-07-24 (latest) — sync_failures migration applied to production
+## 2026-07-26 — Audit pass: security, correctness, UX and animation
+
+A 12-agent review (6 reviewers × 6 adversarial verifiers) went over React correctness, API/auth, money logic, buyer UX, admin UX and animation/CSS. 70 findings, 69 survived verification; the ones that were safe to act on now are below. Three that need Dorte's or an accountant's decision were deliberately left alone and written into the backlog above instead.
+
+**Security / auth**
+- `/api/economic/callback` reflected its `token` query param into an HTML response with no escaping and no auth — a link like `?token=<img onerror=…>` executed script on our own origin, and because the session cookie is `sameSite:"lax"` it ran fully authenticated as whoever opened it (for an admin: read every order, add an admin, delete orders). Now admin-gated and HTML-escaped.
+- Removing an admin didn't actually remove anything: `getSession()` trusted the 30-day JWT's `role` claim, so a demoted account kept full admin — including re-promoting itself — until the cookie expired. The role is now re-read from the DB on every authenticated request, which also means promoting a signed-in buyer takes effect immediately instead of after a sign-out.
+- The OTP 5-attempt cap was a read-then-write race: concurrent requests all read `attempts = 0` and each got a free guess, so the cap was really "unlimited attempts per burst" against the app's only authentication factor. Check and increment are now a single atomic `UPDATE … WHERE attempts < N`. A successful login also retires every outstanding code for that email, not just the one used.
+
+**Correctness**
+- Buyers' "Confirm Receipt" button was dead: it hit an admin-only route and 403'd every time, and the shipped email's CTA linked straight to it. The status route now allows exactly one buyer action — set `received`, on their own shipped order, never a toggle back off — and returns the same 403 for "not found" and "not yours" so sequential order ids can't be probed.
+- Toggling any status ON for a cancelled order still emailed the buyer about it (and re-issued invoices); now blocked, while turning statuses off stays allowed for cleanup.
+- Toasts fired from the invoice and auth screens never rendered at all — `<Toast>` was mounted per-view and those views had none — and because the auto-hide timer lived inside the unmounted component, the message stayed queued and popped up out of context on the next screen that did mount one. There's now a single app-level Toast.
+- An emailed `?order=` deep link rendered a real-looking €0.00 invoice under the deep-linked order number while the fetch was in flight, and stayed there forever if the id was mistyped or belonged to someone else. Now shows a loading state, then a proper "order not found".
+- Signing in from a deep link dropped the link and dumped the user on the catalogue; it now lands on the order.
+- The client fell back to a hardcoded `MOODSCENTBAR` promo whenever the promo table was empty or the fetch failed — the buyer confirmed a discounted total and was invoiced full price. Fallback removed, and the order route now rejects an unknown promo code instead of silently pricing without it.
+- A promo price of `0` or `""` (the admin form stores prices as strings) sold that size for free; only a positive number overrides the catalogue price now, client and server, with tests.
+- Signing out overwrote the saved profile with whatever was in form state even if a profile had never loaded.
+- One "Save All" after a failed inventory load would have written stock 0 across all 21 SKUs — the failure path wiped local state to `{}` and every input rendered as 0. It now keeps the last good data and the button is disabled until a load succeeds.
+- Order-edit quantity ceilings were the remaining free stock rather than the order's own quantity plus remaining stock, silently shrinking orders; restore failed permanently on any order containing an untracked SKU; the edit route hardcoded 35 instead of `SHIPPING_FLAT`; and buyers could still edit quantities after the full invoice had been emailed and booked (now limited to the same window as self-cancel).
+- A failed invoice PDF meant the buyer got no email at all and nothing surfaced anywhere; it now falls back to sending without the attachment and records the failure in the Sync Failures panel.
+
+**UX**
+- Buyers can finally see order status in My Orders (current stage + a 7-step progress dot row) — the data was already there, only emails ever showed it. Cancelled orders now read as cancelled: red-tinted border, struck-through total, dimmed line items.
+- Invoice status toggles now confirm before sending: one click used to email a legally-meaningful invoice and push an accounting draft, from pills sitting 6px apart with a hover-scale.
+- Auth screens are real `<form>`s (Enter submits) with a busy state — double-clicking Send Code previously emailed two codes, of which only the newest worked. The OTP field autofocuses and accepts the OS one-time-code autofill.
+- Checkout names the missing required fields instead of just greying the button, and flags an empty cart; the confirm dialog no longer quotes a fake client-generated order number.
+- Admin: free-text order search (id / email / company), CSV exports the filtered set with ISO dates and a Full Invoice column, delete-promo confirms, promo prices are validated, unsaved inventory edits are marked and no longer clobbered by a background reload, sync-failure rows link through to their order, and revenue totals exclude cancelled orders.
+- Repeat Order clamps to current stock (and says so) rather than prefilling quantities the server will reject.
+
+**Animation / polish**
+- The toast lost its centring for the whole entry animation and rendered half a width off-centre, then snapped — the keyframe animated `transform` without repeating the `translateX(-50%)`. It's now one keyframe covering rise-in, hold and fade-out, sized to the same duration as the hide timer so the two can't drift; duration scales with message length; long messages wrap instead of overflowing the viewport.
+- The CANCELLED watermark on screen was 8%-alpha red on a black card — mathematically invisible. Now legible at 30%.
+- ConfirmModal animates closed and responds to Escape; catalogue stagger caps after the 4th section (it was making below-the-fold sections wait ~0.75s); the landing page reveals in document order instead of buttons-before-copy.
+- Added `prefers-reduced-motion` support, `:focus-visible` rings for keyboard users, dark scrollbars, and mobile breakpoints for the admin inventory/promo grids and the floating cart bar.
+
+Verified by hand against real production data: real OTP admin sign-in, order search, My Orders status chips, invoice deep links (valid, invalid, and mid-load), checkout maths, and toast behaviour instrumented via MutationObserver.
+
+## 2026-07-24 — sync_failures migration applied to production
 
 Ran `db/migration-004-sync-failures.sql` against production via a temporary admin-gated `POST /api/admin/migrate` route (added, called once via the real admin OTP session, confirmed the table exists via `GET /api/admin/sync-failures` returning `{"failures":[]}`, then removed — its job was done, no reason to leave a schema-migration endpoint sitting in the admin panel). The "Sync Failures" admin panel section now actually has something to read from.
 

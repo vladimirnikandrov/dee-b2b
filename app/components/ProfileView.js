@@ -1,9 +1,9 @@
 "use client";
-import { base, FadeIn, Toast, Header, UserNav, inputStyle, labelStyle, FONT } from "./shared";
+import { base, FadeIn, Header, UserNav, inputStyle, labelStyle, FONT } from "./shared";
 
 export default function ProfileView({
   session, view, setView, currentUser, handleLogout,
-  buyer, setBuyer, saveProfile, showToast, toast, hideToast,
+  buyer, setBuyer, saveProfile, showToast,
 }) {
   return (
     <div style={base}>
@@ -23,11 +23,10 @@ export default function ProfileView({
           <div><label style={labelStyle}>Email</label><input className="da-input" style={{...inputStyle,background: "#0a0a0a"}} disabled value={buyer.email}/></div>
         </div>
         <div style={{display:"flex",gap:10}}>
-          <button className="da-btn" onClick={()=>{saveProfile();showToast("Profile updated");}} style={{background:"#fff",color:"#000",border:"none",padding:"15px 28px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>Save Changes</button>
+          <button className="da-btn" onClick={async()=>{ const ok = await saveProfile(); showToast(ok ? "Profile updated" : "Couldn't save — check your connection and try again"); }} style={{background:"#fff",color:"#000",border:"none",padding:"15px 28px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>Save Changes</button>
           <button className="da-btn da-btn-outline" onClick={()=>setView("catalog")} style={{background:"transparent",border: "1px solid #222",padding:"15px 28px",borderRadius:12,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color: "#eee",transition:"all 0.25s"}}>Back</button>
         </div>
       </div></FadeIn>
-      <Toast message={toast.message} visible={toast.visible} onHide={hideToast} />
     </div>
   );
 }
