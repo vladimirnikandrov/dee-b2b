@@ -10,14 +10,41 @@ As of 2026-07-24, the `web` service is connected directly to this repo's `main` 
 
 Nothing in progress. Don't start any of these without an explicit ask from Vladimir.
 
-1. **Decide the shipping-VAT question with Dorte's accountant** (surfaced by the 2026-07-26 audit, deliberately NOT changed unilaterally — Vladimir is asking her): the app charges €35 shipping with no VAT, but `lib/economic.js` sends that as `unitNetPrice` on a domestic-zone line, so e-conomic adds 25% and the draft reads €43.75 — the books disagree with the invoice for every DK / EU-without-VAT-ID order. Two possible fixes: charge VAT on freight in `lib/pricing.js` (likely the legally correct one for DK, but it changes real invoice totals and contradicts a pinned test), or send `amount / 1.25` for the deposit draft so the e-conomic gross matches the €35 invoiced. Needs an accounting decision first, then verification against a live test draft. **Scope, as of the country fix below:** this affects new orders from DK buyers and from EU buyers with no VAT ID. It does NOT newly affect historical orders — `economicRefsFor` now derives the zone from the frozen `orders.vat_rate`, so improving country matching cannot move an old order into the domestic zone. Production has no orders yet, so nothing is currently mis-booked.
-2. **Move Railway/Resend/GitHub off Vladimir's personal accounts onto Dorte's own** — Cloudflare and the domain registrar are sorted (per Vladimir, 2026-07-24); these three are what's left.
-3. **Switch sender/reply email to `order@maison-dee.com`** — blocked on Dorte creating that mailbox (not done yet as of 2026-07-24). Once it exists: update `RESEND_FROM_EMAIL` in Railway, `lib/seller.js`'s `email` field, and verify the new sending domain in Resend.
-4. **A reused e-conomic customer card keeps its old `vatZone`/country.** `getOrCreateCustomer` deliberately does not write back to an existing card — Dorte maintains those by hand for her ~15 existing wholesale customers, and the invoice's own VAT treatment comes from the draft's `recipient` block regardless, so overwriting her records from checkout form data would risk destroying real information to fix a reporting-only discrepancy. Left as-is on purpose; revisit only if her customer list turns out to disagree with reality in a way that matters.
+1. **Move Railway/Resend/GitHub off Vladimir's personal accounts onto Dorte's own** — Cloudflare and the domain registrar are already sorted (per Vladimir, 2026-07-24); these three are what's left. e-conomic does not need it — already her own agreement (1797386 / DA DESIGN ApS).
+2. **Switch sender/reply email to `order@maison-dee.com`** — blocked on Dorte creating that mailbox (not done yet as of 2026-07-24). Once it exists: update `RESEND_FROM_EMAIL` in Railway, `lib/seller.js`'s `email` field, and verify the new sending domain in Resend.
+3. **A reused e-conomic customer card keeps its old `vatZone`/country.** `getOrCreateCustomer` deliberately does not write back to an existing card — Dorte maintains those by hand for her ~15 existing wholesale customers, and the invoice's own VAT treatment comes from the draft's `recipient` block regardless, so overwriting her records from checkout form data would risk destroying real information to fix a reporting-only discrepancy. Left as-is on purpose; revisit only if her customer list turns out to disagree with reality in a way that matters.
 
 The longstanding tech-debt items previously listed here (monolith split, no TS/tests, silent sync failures) have all been worked through as of 2026-07-24 — see the dated entries below. DEE 04/05 pricing confirmed fine as-is (Vladimir, 2026-07-24) — no longer a backlog item. From the 2026-07-26 audit: free-text country and e-conomic draft idempotency were resolved the same day, and draft traceability + customer duplication the same evening — all four are in the dated entries below.
 
 ---
+
+## 2026-07-26 (late) — Shipping VAT: Option 2, and two destination rates
+
+Dorte's accountant answered the open question. Freight follows the goods into the same VAT bracket, and **the quoted shipping price is the final price the buyer pays, VAT already inside it** — never added on top. She also asked for two rates: **Denmark 9.25 EUR, everywhere else 35.00 EUR**. Both are live.
+
+The bug this closes: shipping was charged with no VAT anywhere in the app, but sent to e-conomic as a NET price, so it added 25% on domestic-zone orders and booked 43.75 against an invoice that said 35.00. Every DK and EU-without-VAT-ID order would have disagreed with the books by 8.75.
+
+**One quoted number now splits into two stored ones** (migration 008):
+
+| column | meaning |
+|---|---|
+| `shipping_amount` | NET — the invoice line, and e-conomic's `unitNetPrice` |
+| `shipping_vat_amount` | the VAT inside the charge (new) |
+| `deposit_amount` | GROSS — the shipping-only first invoice, what the buyer actually pays |
+| `vat_amount` | goods VAT **plus** shipping VAT, i.e. the invoice's VAT total |
+| `balance_amount` | goods + goods VAT only — must never pick up the shipping VAT, or the two invoices double-count it |
+
+A Danish order of 500.00 in goods: shipping 7.40 net + 1.85 VAT = 9.25 gross; VAT total 126.85; shipping invoice 9.25, full invoice 625.00, order total 634.25. The buyer pays the same 9.25 they were quoted, and the VAT is now declared instead of silently absent.
+
+Verified end-to-end by placing real orders through the API for all four VAT cases (DK, EU-no-VAT-ID, EU reverse charge, export) and reading back what was stored — the buyer is never charged more than the quoted rate in any of them, and `deposit + balance == total` exactly.
+
+Documents now list **shipping above the VAT line** on the invoice view, the PDF, the confirmation email and the checkout summary. With shipping underneath, the document read as though the VAT covered only the goods, which on a tax document is worse than untidy. Checkout also spells out the gross ("Shipping (9.25 incl. VAT)") so a Danish buyer told "shipping is 9.25" doesn't see 7.40 and think the quote moved.
+
+**Existing rows are deliberately not backfilled.** Their `shipping_amount` is the old no-VAT-anywhere figure and their `vat_amount` covers goods only — which is what those buyers were actually invoiced. Rewriting them would make issued documents say something they never said. Production had zero orders when this shipped, so the mixed-shape window covers nothing real.
+
+**Order edits keep the order's own shipping split** rather than re-pricing freight from the current rate table — a quantity change is not a reason to move a buyer onto a rate they never agreed to.
+
+A four-lens adversarial review (21 findings, all 21 refuted on verification) produced no defects but did surface real nits, all fixed: the checkout summary hadn't been reordered with the other three surfaces; a `??` fallback chain in `lib/economic.js` was unreachable and its comment claimed protection it didn't provide; an `stillHasItems` branch was dead because an emptied order already 400s earlier; the CSV headers didn't say which shipping figure was which. One test was correctly called tautological and was replaced with **the property e-conomic actually depends on** — that `net x 1.25` re-grosses to exactly the quoted figure. It does not hold for every rate (about a fifth of cent values fail at 25%), both configured rates satisfy it, and the test now fails loudly if someone sets one that doesn't.
 
 ## 2026-07-26 (evening) — e-conomic traceability and customer matching
 

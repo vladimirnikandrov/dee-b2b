@@ -115,11 +115,19 @@ create table orders (
   vat_rate numeric not null default 0,
   vat_label text,
   vat_note text,
+  -- Total VAT on the invoice: goods VAT PLUS the VAT inside the shipping
+  -- charge (see shipping_vat_amount).
   vat_amount numeric not null default 0,
+  -- Shipping is quoted VAT-inclusive (lib/products.js), so the one number the
+  -- buyer is told splits into two here:
+  --   shipping_amount     = NET, the invoice line and e-conomic's unitNetPrice
+  --   shipping_vat_amount = the VAT inside it
+  --   deposit_amount      = their sum, the gross the buyer actually pays
   shipping_amount numeric not null default 0,
+  shipping_vat_amount numeric not null default 0,
   total_with_vat numeric not null default 0,
   -- No more 30/70 split — deposit_amount now holds the shipping-only first
-  -- invoice, balance_amount the full order value (goods + VAT). Column
+  -- invoice, balance_amount the full order value (goods + goods VAT). Column
   -- names kept as-is to avoid a migration; see lib/pricing.js.
   deposit_amount numeric not null default 0,
   balance_amount numeric not null default 0,

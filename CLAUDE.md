@@ -154,6 +154,24 @@ Rules (the full version, with reasoning, is the comment block at the top of `lib
 - **`lib/economic.js` derives the VAT zone from the frozen `orders.vat_rate`, not from a fresh `getVatInfo` call.** This is deliberate and load-bearing: draft creation can happen long after the order, so recomputing would let any future improvement to country matching re-book historical orders into a different tax zone than the invoice the buyer holds. There's a regression test for it.
 - Territories outside the EU VAT area (Greenland, Faroes, Åland, French DOMs) are separate entries and land on the export branch — which is what the old hardcoded array did too. Not a settled tax opinion; see the file header.
 
+## Shipping and its VAT (`lib/products.js`, `lib/pricing.js`)
+**Shipping is quoted GROSS.** `SHIPPING_RATES_GROSS` — Denmark 9.25, everywhere else 35.00 — is the final amount the buyer pays. VAT is inside it and is never added on top (Dorte's accountant's decision, 2026-07-26). `splitShipping()` divides the quote into the net line and the VAT within it:
+
+| column | is |
+|---|---|
+| `shipping_amount` | NET — the invoice line, and e-conomic's `unitNetPrice` |
+| `shipping_vat_amount` | the VAT inside the charge |
+| `deposit_amount` | GROSS — the two summed; the shipping-only first invoice |
+| `vat_amount` | goods VAT **plus** shipping VAT — the invoice's VAT total |
+| `balance_amount` | goods + goods VAT **only** — never include shipping VAT here, or the two invoices double-count it |
+
+Things that will bite you:
+- **Send e-conomic the NET.** It applies the customer's `vatZone` to `unitNetPrice` itself. Sending the gross is exactly what made a 35.00 charge book as 43.75 against a 35.00 invoice.
+- **A rate has to survive re-grossing**: `net x 1.25` must land exactly on the quoted gross, which at 25% requires a gross that is a multiple of 0.05. About a fifth of cent values fail. `lib/__tests__/pricing.test.js` pins this for every configured rate — if you add a rate and that test fails, the rate is wrong, not the test.
+- **Shipping is listed above the VAT line** on the invoice view, the PDF, the confirmation email and the checkout summary. Below it, the document reads as though the VAT covered only the goods.
+- **Order edits never re-price freight** from the current rate table — the order keeps the split it was quoted at.
+- Pre-migration-008 rows hold the whole charge in `shipping_amount` with no VAT split, and are deliberately not backfilled.
+
 ## e-conomic integration (`lib/economic.js`)
 Live and verified against Dorte's real account (agreement 1797386 / DA DESIGN ApS) since 2026-07-17. Key things to know before touching this file:
 - **`recipient` object is mandatory** on invoice draft creation, with its own `vatZone` — a bare customer reference isn't enough. Found via live-API testing, not documented clearly by e-conomic.

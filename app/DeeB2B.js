@@ -1,7 +1,8 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { PRODUCTS, SHIPPING_FLAT } from "@/lib/products";
+import { PRODUCTS, shippingRateFor } from "@/lib/products";
 import { getVatInfo } from "@/lib/vat";
+import { splitShipping } from "@/lib/pricing";
 import { normalizeCountry } from "@/lib/countries";
 import {
   base, useStyleInjection, ORDER_STATUSES,
@@ -122,15 +123,23 @@ export default function DeeB2B() {
     }
   }));
 
+  // Checkout preview only — lib/pricing.js runs the same arithmetic server-side
+  // and that is what actually gets stored. Kept deliberately identical so the
+  // total the buyer confirms is the total they are invoiced.
   const vatInfo = getVatInfo(buyer.country, buyer.vat);
-  const vatAmount = Math.round(totalWSP * vatInfo.rate * 100) / 100;
+  const goodsVatAmount = Math.round(totalWSP * vatInfo.rate * 100) / 100;
   const totalItems = orderLines.reduce((s,l) => s+l.qty, 0);
-  const shippingAmount = totalItems > 0 ? SHIPPING_FLAT : 0;
-  const totalBeforeShipping = totalWSP + vatAmount;
-  const totalWithVat = totalBeforeShipping + shippingAmount;
-  // No 30/70 split — first invoice is shipping only, second is the full order value.
-  const depositAmount = shippingAmount;
+  // Shipping is quoted VAT-inclusive and varies by destination; splitShipping
+  // pulls out the net line and the VAT hiding inside it.
+  const shipping = totalItems > 0 ? splitShipping(shippingRateFor(buyer.country), vatInfo.rate) : splitShipping(0, 0);
+  const shippingAmount = shipping.net;
+  const vatAmount = Math.round((goodsVatAmount + shipping.vat) * 100) / 100;
+  // No 30/70 split — first invoice is shipping only (gross), second is the full
+  // order value (goods + goods VAT).
+  const depositAmount = shipping.gross;
   const depositInvoiceTotal = depositAmount;
+  const totalBeforeShipping = Math.round((totalWSP + goodsVatAmount) * 100) / 100;
+  const totalWithVat = Math.round((totalBeforeShipping + depositAmount) * 100) / 100;
 
   useEffect(() => { viewRef.current = view; }, [view]);
 
@@ -584,7 +593,7 @@ export default function DeeB2B() {
   // filtered list), not always the full set — exporting 200 rows when the
   // screen shows 3 is never what was meant.
   const exportCSV = (list) => {
-    const rows = [["Order ID","Date","Company","Email","Country","VAT Number","Items","Subtotal","VAT","Shipping","Total","Shipping Invoice","Full Invoice","Status","Promo Code","Cancelled"]];
+    const rows = [["Order ID","Date","Company","Email","Country","VAT Number","Items","Subtotal","VAT","Shipping (excl. VAT)","Total","Shipping Invoice (incl. VAT)","Full Invoice","Status","Promo Code","Cancelled"]];
     const money = (n) => (Number(n) || 0).toFixed(2);
     (list || allOrders).forEach(o => {
       const items = o.lines.map(l => `${l.product} ${l.size} x${l.qty}`).join("; ");

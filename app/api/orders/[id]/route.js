@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 import { requireAuth, requireAdmin } from "@/lib/auth";
 import { toEnrichedOrder } from "@/lib/orders";
-import { SHIPPING_FLAT } from "@/lib/products";
 
 async function loadOrder(id) {
   const [row] = await sql`select * from orders where id = ${id}`;
@@ -65,14 +64,24 @@ export async function PATCH(request, { params }) {
 
   const newTotalWSP = newLines.reduce((s, l) => s + l.total, 0);
   const vatRate = Number(row.vat_rate);
-  const newVatAmount = Math.round(newTotalWSP * vatRate * 100) / 100;
-  const totalBeforeShipping = newTotalWSP + newVatAmount;
-  const newShippingAmount = newLines.reduce((s, l) => s + l.qty, 0) > 0 ? Number(row.shipping_amount) || SHIPPING_FLAT : 0;
-  const newTotalWithVat = totalBeforeShipping + newShippingAmount;
-  // No 30/70 split — deposit_amount is the shipping-only first invoice,
-  // balance_amount the full order value (see lib/pricing.js).
-  const newDepositAmount = newShippingAmount;
-  const newBalanceAmount = totalBeforeShipping;
+  const round2 = (n) => Math.round(n * 100) / 100;
+  const goodsVat = round2(newTotalWSP * vatRate);
+
+  // Shipping is NOT recomputed from the current rate table. The order was
+  // quoted, invoiced and possibly already paid at whatever it was charged at
+  // the time, and editing quantities is not a reason to re-price the freight —
+  // that would silently move the buyer onto a rate they never agreed to. The
+  // order's own net/VAT split carries over untouched. (An emptied order is not
+  // a case to handle here: the guard above already rejects it with a 400.)
+  const newShippingAmount = Number(row.shipping_amount) || 0;
+  const newShippingVat = Number(row.shipping_vat_amount) || 0;
+
+  // No 30/70 split — deposit_amount is the shipping-only first invoice (gross),
+  // balance_amount the full order value (goods + goods VAT). See lib/pricing.js.
+  const newVatAmount = round2(goodsVat + newShippingVat);
+  const newDepositAmount = round2(newShippingAmount + newShippingVat);
+  const newBalanceAmount = round2(newTotalWSP + goodsVat);
+  const newTotalWithVat = round2(newBalanceAmount + newDepositAmount);
 
   try {
     const updated = await sql.begin(async (tx) => {
@@ -111,7 +120,7 @@ export async function PATCH(request, { params }) {
       const [r] = await tx`
         update orders set
           lines = ${sql.json(newLines)}, total_wsp = ${newTotalWSP}, vat_amount = ${newVatAmount},
-          shipping_amount = ${newShippingAmount}, total_with_vat = ${newTotalWithVat},
+          shipping_amount = ${newShippingAmount}, shipping_vat_amount = ${newShippingVat}, total_with_vat = ${newTotalWithVat},
           deposit_amount = ${newDepositAmount}, balance_amount = ${newBalanceAmount},
           economic_balance_synced_at = null, economic_balance_claimed_at = null
         where id = ${id}

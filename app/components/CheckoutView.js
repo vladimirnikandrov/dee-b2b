@@ -69,9 +69,16 @@ export default function CheckoutView({
               <div style={{marginBottom:16}}>{orderLines.map((line,i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"10px 0",borderBottom: "1px solid #222",fontSize:12}}><div><div style={{fontWeight:500}}>{line.product}</div><div style={{color: "#999",fontSize:10,marginTop:2}}>{SIZE_LABELS[line.size]}</div></div><div style={{textAlign:"right",whiteSpace:"nowrap"}}><div style={{color:"#888",fontSize:11}}>{line.qty} × {formatEUR(line.unitPrice)}</div><div style={{fontWeight:600,marginTop:1}}>{formatEUR(line.total)}</div></div></div>))}</div>
               <div style={{paddingTop:12,borderTop: "1px solid #333"}}>
                 <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:6,color: "#888"}}><span>Subtotal</span><span style={{fontWeight:500,color: "#eee"}}>{formatEUR(totalWSP)}</span></div>
+                {/* Shipping sits ABOVE the VAT row, same order as the invoice,
+                    the PDF and the confirmation email: shipping is quoted
+                    VAT-inclusive, so its VAT is part of the VAT total below.
+                    Listed underneath, it would read as though the VAT covered
+                    only the goods. The gross is spelled out alongside because a
+                    Danish buyer told "shipping is 9.25" should not see 7.40 and
+                    think the quote moved. */}
+                {shippingAmount>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:6,color: "#888"}}><span>Shipping{depositInvoiceTotal>shippingAmount?<span style={{color:"#666"}}> ({formatEUR(depositInvoiceTotal)} incl. VAT)</span>:null}</span><span style={{fontWeight:500,color: "#eee"}}>{formatEUR(shippingAmount)}</span></div>}
                 {vatAmount>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:6,color: "#888"}}><span>{vatInfo.label}</span><span style={{fontWeight:500,color: "#eee"}}>{formatEUR(vatAmount)}</span></div>}
                 {vatInfo.rate===0&&buyer.country&&<div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:6,color: "#666"}}><span>VAT</span><span>{vatInfo.label}</span></div>}
-                {shippingAmount>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:6,color: "#888"}}><span>Shipping</span><span style={{fontWeight:500,color: "#eee"}}>{formatEUR(shippingAmount)}</span></div>}
                 <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:600,paddingTop:8,borderTop: "1px solid #333"}}><span>Total</span><span>{formatEUR(totalWithVat)}</span></div>
               </div>
               <div style={{marginTop:12,padding:"14px 0 0",borderTop:"2px solid #000"}}>

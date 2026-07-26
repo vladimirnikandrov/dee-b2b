@@ -99,11 +99,11 @@ export async function POST(request) {
       const [row] = await tx`
         insert into orders (
           user_id, buyer_company, buyer_contact, buyer_address, buyer_city, buyer_country, buyer_zip, buyer_vat, buyer_email,
-          lines, total_wsp, vat_rate, vat_label, vat_note, vat_amount, shipping_amount, total_with_vat, deposit_amount, balance_amount,
+          lines, total_wsp, vat_rate, vat_label, vat_note, vat_amount, shipping_amount, shipping_vat_amount, total_with_vat, deposit_amount, balance_amount,
           promo_code, promo_label
         ) values (
           ${session.id}, ${buyer.company}, ${buyer.contact || null}, ${buyer.address}, ${buyer.city}, ${country}, ${buyer.zip || null}, ${buyer.vat || null}, ${buyer.email},
-          ${sql.json(pricing.lines)}, ${pricing.totalWSP}, ${pricing.vatInfo.rate}, ${pricing.vatInfo.label}, ${pricing.vatInfo.note}, ${pricing.vatAmount}, ${pricing.shippingAmount}, ${pricing.totalWithVat}, ${pricing.depositAmount}, ${pricing.balanceAmount},
+          ${sql.json(pricing.lines)}, ${pricing.totalWSP}, ${pricing.vatInfo.rate}, ${pricing.vatInfo.label}, ${pricing.vatInfo.note}, ${pricing.vatAmount}, ${pricing.shippingAmount}, ${pricing.shippingVatAmount}, ${pricing.totalWithVat}, ${pricing.depositAmount}, ${pricing.balanceAmount},
           ${promo?.code || null}, ${promo?.label || null}
         )
         returning *

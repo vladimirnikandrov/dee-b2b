@@ -12,5 +12,6 @@
 import m005 from "./005-canonical-country";
 import m006 from "./006-economic-sync-tracking";
 import m007 from "./007-economic-customer-number";
+import m008 from "./008-shipping-vat";
 
-export const MIGRATIONS = [m005, m006, m007];
+export const MIGRATIONS = [m005, m006, m007, m008];
