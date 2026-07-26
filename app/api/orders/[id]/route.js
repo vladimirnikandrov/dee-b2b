@@ -96,11 +96,24 @@ export async function PATCH(request, { params }) {
         }
       }
 
+      // Clearing the e-conomic claim is the important part here. Editing the
+      // lines makes an already-posted full-order draft stale, and toggling
+      // `balance_invoiced` off and on is the only way the admin panel offers
+      // to re-issue it — so the claim has to be handed back, or the corrected
+      // draft would be skipped as "already synced" and the books would keep
+      // the old amounts forever.
+      //
+      // `economic_balance_draft_number` is deliberately NOT cleared. That stale
+      // document still exists in Dorte's accounting and has to be deleted by
+      // hand — its number is exactly what she needs to find it, and nothing
+      // here can retract a document already in her books. The admin panel reads
+      // "draft number but no sync timestamp" as superseded and says so.
       const [r] = await tx`
         update orders set
           lines = ${sql.json(newLines)}, total_wsp = ${newTotalWSP}, vat_amount = ${newVatAmount},
           shipping_amount = ${newShippingAmount}, total_with_vat = ${newTotalWithVat},
-          deposit_amount = ${newDepositAmount}, balance_amount = ${newBalanceAmount}
+          deposit_amount = ${newDepositAmount}, balance_amount = ${newBalanceAmount},
+          economic_balance_synced_at = null, economic_balance_claimed_at = null
         where id = ${id}
         returning *
       `;

@@ -61,15 +61,23 @@ app/
   privacy-policy/, eula/, dpa/, legal-layout.js — Legal pages
   api/                 — auth, admin, orders, inventory, promo-codes, profile,
                           generate-invoice, economic — see CLAUDE.md for the full route map
-lib/                    — shared logic: db, auth, pricing, vat, products, seller,
-                          format, email, invoice-pdf, economic, orders
+lib/                    — shared logic: db, auth, pricing, vat, countries, products,
+                          seller, format, email, invoice-pdf, economic, orders, migrate
 db/
-  schema.sql            — canonical current schema
-  migration-*.sql        — historical, already applied
+  schema.sql            — canonical current schema (apply to a fresh DB)
+  migrations/           — applied automatically at boot; append new ones to index.js
+  migration-*.sql        — historical, applied by hand before the runner existed
+instrumentation.js      — Next.js boot hook: runs pending migrations
 CHANGELOG.md            — release history
 CLAUDE.md               — full architecture notes
 .env.local.example      — env var template
 ```
+
+### Database migrations
+
+There's nothing to run by hand. `instrumentation.js` applies anything pending on boot — locally on `npm run dev`, in production on deploy — inside one transaction under an advisory lock, tracked in a `schema_migrations` table. To add one, write `db/migrations/00N-name.js` exporting `{ id, async run(tx) }` and append it to `db/migrations/index.js`.
+
+Two rules worth knowing before you write one: migrations are **append-only** (never edit or renumber one that has shipped), and each must be safe to apply **while the previous release is still serving traffic**, because Railway overlaps deployments. The reasoning, and what happens when a migration fails, is documented at the top of [`lib/migrate.js`](./lib/migrate.js).
 
 Full file-by-file breakdown and the reasoning behind key decisions: [`CLAUDE.md`](./CLAUDE.md).
 

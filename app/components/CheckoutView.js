@@ -1,6 +1,7 @@
 "use client";
 import { SIZE_LABELS, formatEUR } from "@/lib/format";
-import { base, FadeIn, ConfirmModal, Header, UserNav, inputStyle, labelStyle, FONT } from "./shared";
+import { countryCode } from "@/lib/countries";
+import { base, FadeIn, ConfirmModal, CountrySelect, Header, UserNav, inputStyle, labelStyle, FONT } from "./shared";
 
 export default function CheckoutView({
   session, view, setView, currentUser, handleLogout,
@@ -16,7 +17,12 @@ export default function CheckoutView({
     ["Country", buyer.country], ["Email", buyer.email],
   ];
   const missing = required.filter(([, v]) => !(v || "").trim()).map(([k]) => k);
-  const canSubmit = missing.length === 0 && orderLines.length > 0;
+  // A country string we can't resolve is exactly the case that used to be
+  // invoiced at 0% export VAT by accident. POST /api/orders rejects it, so
+  // block here too rather than letting the buyer hit a server error — this
+  // only fires for an old profile whose free-text country predates the picker.
+  const countryUnresolved = !!(buyer.country || "").trim() && !countryCode(buyer.country);
+  const canSubmit = missing.length === 0 && !countryUnresolved && orderLines.length > 0;
   return (
     <div style={base}>
       <Header right={<UserNav view={view} setView={setView} session={session} currentUser={currentUser} handleLogout={handleLogout} />} currentUser={currentUser} setView={setView} />
@@ -33,7 +39,7 @@ export default function CheckoutView({
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14}}>
                 <div><label style={labelStyle}>City *</label><input className="da-input" style={inputStyle} value={buyer.city} onChange={e=>setBuyer({...buyer,city:e.target.value})}/></div>
                 <div><label style={labelStyle}>ZIP</label><input className="da-input" style={inputStyle} value={buyer.zip} onChange={e=>setBuyer({...buyer,zip:e.target.value})}/></div>
-                <div><label style={labelStyle}>Country *</label><input className="da-input" style={inputStyle} value={buyer.country} onChange={e=>setBuyer({...buyer,country:e.target.value})} placeholder="e.g. France"/></div>
+                <div><label style={labelStyle} htmlFor="checkout-country">Country *</label><CountrySelect id="checkout-country" value={buyer.country} onChange={c=>setBuyer({...buyer,country:c})}/></div>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
                 <div><label style={labelStyle}>VAT Number</label><input className="da-input" style={inputStyle} value={buyer.vat} onChange={e=>setBuyer({...buyer,vat:e.target.value})} placeholder="e.g. DK12345678"/></div>
@@ -41,7 +47,12 @@ export default function CheckoutView({
               </div>
               {buyer.vat && <div style={{fontSize:10,color: "#666",lineHeight:1.5,marginTop:-8}}>EU buyers: provide valid VAT number for reverse charge (0% VAT)</div>}
             </div>
-            {buyer.country && <div style={{padding:"12px 16px",background: "#111",borderRadius:10,border: "1px solid #222",fontSize:11,lineHeight:1.6,marginTop:20}}><span style={{fontWeight:600,color:"#fff"}}>{vatInfo.label}</span><span style={{color:"#888",marginLeft:8}}>{vatInfo.note}</span></div>}
+            {/* Never show a VAT verdict derived from a country we couldn't
+                resolve — "Export (0% VAT)" is the fallback branch, and
+                displaying it here would read as confirmation. */}
+            {countryUnresolved
+              ? <div style={{padding:"12px 16px",background:"#1a1408",borderRadius:10,border:"1px solid #4a3a10",fontSize:11,lineHeight:1.6,marginTop:20,color:"#eab308"}}>Please reselect your country from the list so VAT is calculated correctly.</div>
+              : buyer.country && <div style={{padding:"12px 16px",background: "#111",borderRadius:10,border: "1px solid #222",fontSize:11,lineHeight:1.6,marginTop:20}}><span style={{fontWeight:600,color:"#fff"}}>{vatInfo.label}</span><span style={{color:"#888",marginLeft:8}}>{vatInfo.note}</span></div>}
             <div style={{marginTop:28,padding:"20px",background: "#111",borderRadius:12,border: "1px solid #222"}}>
               <div style={{fontSize:10,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",color: "#666",marginBottom:10}}>Promo Code</div>
               <div style={{display:"flex",gap:8}}>
@@ -69,6 +80,7 @@ export default function CheckoutView({
               <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:20}}>
                 <button className="da-btn" onClick={()=>{if(canSubmit&&!submitting){askConfirm({title:"Confirm Order",message:`Place this order for ${formatEUR(totalWithVat)}? A shipping invoice of ${formatEUR(depositInvoiceTotal)} will be generated now.`,confirmLabel:"Place Order",danger:false,onConfirm:async ()=>{closeConfirm();await handleSubmitOrder();}});}}} disabled={!canSubmit||submitting} style={{width:"100%",background:canSubmit&&!submitting?"#fff":"#333",color:canSubmit&&!submitting?"#000":"#666",border:"none",padding:"14px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:canSubmit&&!submitting?"pointer":"default",fontFamily:FONT}}>{submitting?"Placing Order...":"Place Order"}</button>
                 {missing.length > 0 && orderLines.length > 0 && <div style={{fontSize:10,color:"#b45309",textAlign:"center",lineHeight:1.6,letterSpacing:"0.02em"}}>Required: {missing.join(" · ")}</div>}
+                {countryUnresolved && missing.length === 0 && orderLines.length > 0 && <div style={{fontSize:10,color:"#b45309",textAlign:"center",lineHeight:1.6,letterSpacing:"0.02em"}}>Select your country from the list</div>}
                 {orderLines.length === 0 && <div style={{fontSize:10,color:"#b45309",textAlign:"center",lineHeight:1.6,letterSpacing:"0.02em"}}>Your cart is empty</div>}
                 <button className="da-btn da-btn-outline" onClick={()=>setView("catalog")} style={{width:"100%",background:"transparent",border: "1px solid #222",padding:"12px",borderRadius:12,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color: "#eee",transition:"all 0.25s"}}>Back to Catalog</button>
               </div>

@@ -3,6 +3,49 @@ import { PRODUCTS } from "@/lib/products";
 import { SIZE_LABELS, formatEUR } from "@/lib/format";
 import { base, ConfirmModal, Header, NoteSection, inputStyle, labelStyle, FONT, ORDER_STATUSES } from "./shared";
 
+// Whether each of an order's two invoices actually reached e-conomic. Until
+// now the only signal was a sync-failure row, so a draft that silently never
+// got created looked identical to one that did — and Dorte's books were short
+// an invoice with nothing on screen to say so.
+//
+// Four states, because "not sent" alone would be read as a failure in three of
+// them: green = the draft exists and re-toggling won't create a second; grey =
+// an attempt is in flight (the sync is fire-and-forget, so it's normal for a
+// second or two after toggling); blue = superseded, meaning the order was
+// edited after this draft was posted and the old document is still sitting in
+// her accounting waiting to be deleted by hand; amber = genuinely nothing sent.
+function EconomicSync({ economic, statuses }) {
+  if (!economic) return null; // buyer view, or a row from before migration 006
+  const rows = [
+    { label: "Shipping", claimed: economic.depositClaimedAt, synced: economic.depositSyncedAt, num: economic.depositDraftNumber, expected: statuses.deposit_invoiced },
+    { label: "Full", claimed: economic.balanceClaimedAt, synced: economic.balanceSyncedAt, num: economic.balanceDraftNumber, expected: statuses.balance_invoiced },
+  ].filter((r) => r.expected);
+  if (rows.length === 0) return null;
+
+  const state = (r) => {
+    if (r.synced) return { text: r.num ? `draft #${r.num}` : "sent", fg: "#4ade80", bg: "#0c1a12", bd: "#1f3d2b" };
+    if (r.claimed) return { text: "sending…", fg: "#9ca3af", bg: "#111", bd: "#333" };
+    // A draft number with no claim and no sync means the order was edited
+    // after that draft was created — see app/api/orders/[id]/route.js.
+    if (r.num) return { text: `#${r.num} superseded — delete it in e-conomic`, fg: "#7dd3fc", bg: "#0a1620", bd: "#1e3a4a" };
+    return { text: "not sent", fg: "#eab308", bg: "#1a1408", bd: "#4a3a10" };
+  };
+
+  return (
+    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10,fontSize:9,letterSpacing:"0.06em",textTransform:"uppercase",color:"#666"}}>
+      <span style={{alignSelf:"center"}}>e-conomic</span>
+      {rows.map((r) => {
+        const s = state(r);
+        return (
+          <span key={r.label} style={{padding:"4px 9px",borderRadius:6,border:`1px solid ${s.bd}`,background:s.bg,color:s.fg}}>
+            {r.label}: {s.text}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function AdminView({
   setView, currentUser, handleLogout,
   adminExpanded, setAdminExpanded,
@@ -333,6 +376,7 @@ export default function AdminView({
                       <button key={s.key} onClick={()=>toggleOrderStatus(order.id,s.key)} className="da-status-step" style={{padding:"8px 14px",borderRadius:8,fontSize:10,fontWeight:order.statuses[s.key]?600:400,border:`2px solid ${order.statuses[s.key]?"#fff":"#444"}`,background:order.statuses[s.key]?"#000":"transparent",color:order.statuses[s.key]?"#fff":"#999",cursor:"pointer",fontFamily:FONT,textTransform:"uppercase",letterSpacing:"0.08em",transition:"all 0.2s"}}>{s.label}</button>
                     ))}
                   </div>
+                  <EconomicSync economic={order.economic} statuses={order.statuses} />
                 </div>
                 <div className="da-order-actions" style={{display:"flex",gap:8}}>
                   <button className="da-btn da-btn-outline" onClick={()=>handleViewInvoice(order.id,"admin","deposit")} style={{background:"transparent",border: "1px solid #222",padding:"9px 18px",borderRadius:10,fontSize:10,color: "#eee",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Shipping Invoice</button>

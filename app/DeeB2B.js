@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { PRODUCTS, SHIPPING_FLAT } from "@/lib/products";
 import { getVatInfo } from "@/lib/vat";
+import { normalizeCountry } from "@/lib/countries";
 import {
   base, useStyleInjection, ORDER_STATUSES,
   Logo, Toast, ConfirmModal, AuthScreen, labelStyle, inputStyle,
@@ -217,7 +218,11 @@ export default function DeeB2B() {
       if (!res.ok) return null;
       const { profile: data } = await res.json();
       if (!data) return null;
-      const mapped = { company: data.company||"", contact: data.contact||"", address: data.address||"", city: data.city||"", country: data.country||"", zip: data.zip||"", vat: data.vat||"", email: data.email||"" };
+      // Country is normalized on the way in so a profile saved before the
+      // picker existed ("Danmark", "Deutschland") selects the right entry
+      // instead of reading as blank. Unresolvable values pass through
+      // untouched — CountrySelect shows them and asks for a reselect.
+      const mapped = { company: data.company||"", contact: data.contact||"", address: data.address||"", city: data.city||"", country: normalizeCountry(data.country) || data.country || "", zip: data.zip||"", vat: data.vat||"", email: data.email||"" };
       setBuyer(mapped);
       profileLoaded.current = true;
       return mapped;
@@ -386,8 +391,25 @@ export default function DeeB2B() {
     try {
       const res = await fetch(`/api/orders/${orderId}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key }) });
       const data = await res.json();
-      if (!res.ok) { logError("toggleOrderStatus:" + key, data.error); showToast("Failed to update status — " + (data.error || "")); return; }
+      if (!res.ok) {
+        logError("toggleOrderStatus:" + key, data.error);
+        // 409 means someone else (or a double-click) already changed this
+        // status. The server message says so on its own, and the local view is
+        // now stale — reload rather than leaving two admins looking at
+        // different states.
+        if (res.status === 409) { showToast(data.error || "That status was just changed elsewhere"); loadOrders(); return; }
+        showToast("Failed to update status — " + (data.error || ""));
+        return;
+      }
       setAllOrders(prev => prev.map(o => o.id === orderId ? {...o, statuses: data.statuses} : o));
+      // The response only carries statuses, so the order's `economic` block is
+      // now stale — and for an invoice status it's stale in the worst way: the
+      // e-conomic sync is fire-and-forget, so the badge would sit on "sending…"
+      // (or "not sent", pre-toggle) indefinitely and invite a re-toggle of an
+      // invoice that did go out. Reload once the sync has had time to land.
+      if (key === "deposit_invoiced" || key === "balance_invoiced") {
+        setTimeout(loadOrders, 3000);
+      }
     } catch (e) {
       logError("toggleOrderStatus:" + key, e.message || e);
       showToast("Failed to update status");
@@ -528,7 +550,9 @@ export default function DeeB2B() {
       return;
     }
     setQuantities(newQtys);
-    setBuyer({...order.buyer});
+    // Same normalization as loadProfile — a repeated old order must not carry
+    // its free-text country back into a new checkout unresolved.
+    setBuyer({...order.buyer, country: normalizeCountry(order.buyer?.country) || order.buyer?.country || ""});
     if (order.promoCode) {
       const promo = promoCodes.find(p => p.code === order.promoCode);
       if (promo) setAppliedPromo(promo);
@@ -565,7 +589,11 @@ export default function DeeB2B() {
     (list || allOrders).forEach(o => {
       const items = o.lines.map(l => `${l.product} ${l.size} x${l.qty}`).join("; ");
       const statusStr = ORDER_STATUSES.filter(s => o.statuses[s.key]).map(s => s.label).join(", ");
-      rows.push([o.id, new Date(o.date).toISOString().slice(0,10), o.buyer.company, o.buyer.email, o.buyer.country, o.buyer.vat||"", items, money(o.totalWSP), money(o.vatAmount), money(o.shipping), money(o.totalWithVat), money(o.depositAmount), money(o.balanceAmount), statusStr, o.promoCode||"", o.cancelled?"Yes":"No"]);
+      // Display-only normalization. `orders.buyer_country` is deliberately
+      // never rewritten (it's the record of what was invoiced), so the column
+      // otherwise mixes "Danmark" and "Denmark" as separate values forever and
+      // any group-by in Excel double-counts them.
+      rows.push([o.id, new Date(o.date).toISOString().slice(0,10), o.buyer.company, o.buyer.email, normalizeCountry(o.buyer.country) || o.buyer.country || "", o.buyer.vat||"", items, money(o.totalWSP), money(o.vatAmount), money(o.shipping), money(o.totalWithVat), money(o.depositAmount), money(o.balanceAmount), statusStr, o.promoCode||"", o.cancelled?"Yes":"No"]);
     });
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], {type:"text/csv"});

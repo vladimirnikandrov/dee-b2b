@@ -1,10 +1,15 @@
 "use client";
-import { base, FadeIn, Header, UserNav, inputStyle, labelStyle, FONT } from "./shared";
+import { countryCode } from "@/lib/countries";
+import { base, FadeIn, CountrySelect, Header, UserNav, inputStyle, labelStyle, FONT } from "./shared";
 
 export default function ProfileView({
   session, view, setView, currentUser, handleLogout,
   buyer, setBuyer, saveProfile, showToast,
 }) {
+  // Saving the profile is allowed with an unresolvable country (refusing would
+  // block editing the other eight fields), but checkout is not — so say so
+  // here rather than letting them discover it at the end of an order.
+  const countryUnresolved = !!(buyer.country || "").trim() && !countryCode(buyer.country);
   return (
     <div style={base}>
       <Header right={<UserNav view={view} setView={setView} session={session} currentUser={currentUser} handleLogout={handleLogout} />} currentUser={currentUser} setView={setView} />
@@ -18,7 +23,11 @@ export default function ProfileView({
             <div><label style={labelStyle}>City</label><input className="da-input" style={inputStyle} value={buyer.city} onChange={e=>setBuyer({...buyer,city:e.target.value})}/></div>
             <div><label style={labelStyle}>ZIP / Postal Code</label><input className="da-input" style={inputStyle} value={buyer.zip} onChange={e=>setBuyer({...buyer,zip:e.target.value})}/></div>
           </div>
-          <div><label style={labelStyle}>Country</label><input className="da-input" style={inputStyle} value={buyer.country} onChange={e=>setBuyer({...buyer,country:e.target.value})}/></div>
+          <div>
+            <label style={labelStyle} htmlFor="profile-country">Country</label>
+            <CountrySelect id="profile-country" value={buyer.country} onChange={c=>setBuyer({...buyer,country:c})}/>
+            {countryUnresolved && <div style={{fontSize:10,color:"#eab308",marginTop:6,lineHeight:1.6}}>Please pick your country from the list — orders can&rsquo;t be placed until it&rsquo;s set, so VAT is calculated correctly.</div>}
+          </div>
           <div><label style={labelStyle}>VAT Number</label><input className="da-input" style={inputStyle} value={buyer.vat} onChange={e=>setBuyer({...buyer,vat:e.target.value})}/></div>
           <div><label style={labelStyle}>Email</label><input className="da-input" style={{...inputStyle,background: "#0a0a0a"}} disabled value={buyer.email}/></div>
         </div>

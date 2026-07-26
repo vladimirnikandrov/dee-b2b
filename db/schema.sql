@@ -1,6 +1,14 @@
 -- Dee B2B — Railway Postgres schema
 -- Replaces Supabase (Postgres + Auth). Plain SQL, no RLS —
 -- authorization now happens exclusively in Next.js API routes.
+--
+-- This is the bootstrap for a FRESH database and is NOT idempotent — apply it
+-- once, then let the app's own migration runner (lib/migrate.js, invoked from
+-- instrumentation.js on boot) take over. Everything here already includes the
+-- effect of every migration up to and including 006; the runner will still
+-- execute them on first boot because the `schema_migrations` ledger it keeps
+-- starts empty, but every migration is written idempotently so that is a
+-- harmless no-op. The runner creates `schema_migrations` itself.
 
 create extension if not exists pgcrypto; -- for gen_random_uuid()
 
@@ -121,6 +129,17 @@ create table orders (
   cancelled boolean default false,
   promo_code text,
   promo_label text,
+  -- e-conomic sync state, one pair per invoice (migration 006). `claimed_at`
+  -- is the lock taken before talking to e-conomic; `synced_at` means the draft
+  -- confirmably exists. Kept separate so a process death between the two is a
+  -- visible, recoverable state rather than an order marked done with no
+  -- invoice in the books. See lib/economic.js.
+  economic_deposit_claimed_at timestamptz,
+  economic_deposit_synced_at timestamptz,
+  economic_deposit_draft_number integer,
+  economic_balance_claimed_at timestamptz,
+  economic_balance_synced_at timestamptz,
+  economic_balance_draft_number integer,
   created_at timestamptz default now()
 );
 

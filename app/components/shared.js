@@ -4,6 +4,7 @@
 // app state via explicit props rather than the parent's closures.
 import { useEffect, useState } from "react";
 import { LOGO_WHITE, LOGO_BLACK } from "@/lib/assets";
+import { COUNTRIES } from "@/lib/countries";
 
 export const FONT = "'Helvetica Neue', Helvetica, Arial, sans-serif";
 export const base = { fontFamily: FONT, color: "#fff", background: "#000", minHeight: "100vh", margin: 0, padding: 0 };
@@ -42,6 +43,11 @@ const CSS = `
   .da-btn-outline:hover { background:#000 !important; color:#fff !important; border-color:#555 !important; }
   .da-btn-outline-light:hover { background:#fff !important; color:#000 !important; }
   .da-input:focus { border-color:#666 !important; }
+  /* A <select>'s dropdown list is drawn by the OS, which defaults its
+     options to the system light palette — white-on-white against this
+     control's dark background. Both have to be set explicitly. */
+  .da-select option { background:#1a1a1a; color:#eee; }
+  .da-select option:disabled { color:#666; }
   button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid #8a8a8a; outline-offset: 2px; }
   .da-qty-btn:hover { background: #333 !important; }
   .da-qty-btn:active { background: #444 !important; }
@@ -133,6 +139,42 @@ export function FadeIn({ children, delay = 0, style = {} }) {
   return <div style={{animation:`fadeUp 0.6s cubic-bezier(0.23,1,0.32,1) ${delay}s both`,...style}}>{children}</div>;
 }
 
+// Country picker — replaced the free-text <input> on 2026-07-26. A typed
+// country was the input to the VAT decision (lib/vat.js), so "Deutschland" or
+// a typo quietly produced a 0%-VAT export invoice for an EU buyer. A closed
+// list makes that unrepresentable.
+//
+// `value` is expected to already be a canonical name from lib/countries.js —
+// callers normalize when loading a profile or repeating an order. Anything
+// else still gets shown as its own option rather than silently reading as
+// blank: a buyer whose old profile says something we can't resolve should see
+// their data and be asked to reselect, not find the field mysteriously empty.
+export function CountrySelect({ value, onChange, id, style = {} }) {
+  const known = !!value && COUNTRIES.some((c) => c.name === value);
+  const legacy = value && !known ? value : null;
+  return (
+    <div style={{ position: "relative" }}>
+      <select
+        id={id}
+        className="da-input da-select"
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ ...inputStyle, appearance: "none", WebkitAppearance: "none", MozAppearance: "none", cursor: "pointer", paddingRight: 36, color: value ? "#ccc" : "#666", ...style }}
+      >
+        <option value="" disabled>Select country…</option>
+        {/* Shown so the buyer sees what's actually stored, but `disabled` —
+            it stays displayed as the current selection while being impossible
+            to re-choose. Selectable, it would look like the right answer and
+            leave them stuck on "Select your country from the list" after
+            picking exactly the value they were just shown. */}
+        {legacy && <option value={legacy} disabled>{legacy} — not recognized, please reselect</option>}
+        {COUNTRIES.map((c) => <option key={c.code} value={c.name}>{c.name}</option>)}
+      </select>
+      <span aria-hidden="true" style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "#666", fontSize: 8 }}>▼</span>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════
    TOAST
    ═══════════════════════════════════════════ */
@@ -187,8 +229,12 @@ export function ConfirmModal({ open, title, message, confirmLabel, cancelLabel, 
         <div style={{fontSize:15,fontWeight:600,marginBottom:8,fontFamily:FONT}}>{title}</div>
         <div style={{fontSize:13,color: "#888",lineHeight:1.7,marginBottom:28,fontFamily:FONT}}>{message}</div>
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-          <button onClick={onCancel} style={{background:"transparent",border: "1px solid #2a2a2a",padding:"10px 20px",borderRadius:10,fontSize:11,letterSpacing:"0.08em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color: "#888"}}>{cancelLabel||"Cancel"}</button>
-          <button onClick={onConfirm} style={{background:danger?"#b91c1c":"#000",color:"#fff",border:"none",padding:"10px 24px",borderRadius:10,fontSize:11,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>{confirmLabel||"Confirm"}</button>
+          {/* Both are disabled once `open` flips false: the dialog stays
+              mounted for another 170ms to animate out, and a second click in
+              that window fired the action twice — which for the invoice
+              statuses meant two emails and two accounting drafts. */}
+          <button onClick={onCancel} disabled={!open} style={{background:"transparent",border: "1px solid #2a2a2a",padding:"10px 20px",borderRadius:10,fontSize:11,letterSpacing:"0.08em",textTransform:"uppercase",cursor:open?"pointer":"default",fontFamily:FONT,color: "#888"}}>{cancelLabel||"Cancel"}</button>
+          <button onClick={onConfirm} disabled={!open} style={{background:danger?"#b91c1c":"#000",color:"#fff",border:"none",padding:"10px 24px",borderRadius:10,fontSize:11,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",cursor:open?"pointer":"default",fontFamily:FONT}}>{confirmLabel||"Confirm"}</button>
         </div>
       </div>
     </div>

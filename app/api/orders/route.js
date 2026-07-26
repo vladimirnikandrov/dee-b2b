@@ -7,6 +7,7 @@ import { sendTransactionalEmail } from "@/lib/email";
 import { generateInvoicePDF } from "@/lib/invoice-pdf";
 import { syncInvoiceToEconomic } from "@/lib/economic";
 import { recordSyncFailure } from "@/lib/sync-failures";
+import { normalizeCountry } from "@/lib/countries";
 
 // Buyers see only their own orders; admins see everyone's — same rule the
 // old client-side loadOrders()/allOrders filtering enforced, now actually
@@ -25,7 +26,8 @@ export async function GET() {
     ? await sql`select * from order_notes where order_id in ${sql(orderIds)} order by created_at asc`
     : [];
 
-  return NextResponse.json({ orders: rows.map((r) => toEnrichedOrder(r, notes)) });
+  const isAdmin = session.role === "admin";
+  return NextResponse.json({ orders: rows.map((r) => toEnrichedOrder(r, notes, { includeInternal: isAdmin })) });
 }
 
 export async function POST(request) {
@@ -41,10 +43,24 @@ export async function POST(request) {
       return NextResponse.json({ error: "Missing required buyer details" }, { status: 400 });
     }
 
+    // The country string decides the VAT treatment of the whole order, so it
+    // has to resolve to a real country before anything is priced. Before the
+    // picker shipped (2026-07-26) this was free text: "Deutschland" matched no
+    // branch in lib/vat.js and the order was invoiced as a 0% export. Refusing
+    // here means the value stored on an order is always canonical, whatever
+    // the client sent. (During the minutes a Railway deploy overlaps, the
+    // previous release is still serving this route without the check — so
+    // "nothing unresolvable can ever be written again" is true from the moment
+    // the rollout completes, not from the moment it starts.)
+    const country = normalizeCountry(buyer.country);
+    if (!country) {
+      return NextResponse.json({ error: "Please select your country from the list" }, { status: 400 });
+    }
+
     // Save/refresh buyer profile (replaces the old client-side saveProfile() call).
     await sql`
       insert into buyer_profiles (user_id, company, contact, address, city, country, zip, vat, email, updated_at)
-      values (${session.id}, ${buyer.company}, ${buyer.contact || null}, ${buyer.address}, ${buyer.city}, ${buyer.country}, ${buyer.zip || null}, ${buyer.vat || null}, ${buyer.email}, now())
+      values (${session.id}, ${buyer.company}, ${buyer.contact || null}, ${buyer.address}, ${buyer.city}, ${country}, ${buyer.zip || null}, ${buyer.vat || null}, ${buyer.email}, now())
       on conflict (user_id) do update set
         company = excluded.company, contact = excluded.contact, address = excluded.address,
         city = excluded.city, country = excluded.country, zip = excluded.zip,
@@ -62,7 +78,7 @@ export async function POST(request) {
       }
     }
 
-    const pricing = computeOrderPricing({ items, buyerCountry: buyer.country, buyerVat: buyer.vat, promo });
+    const pricing = computeOrderPricing({ items, buyerCountry: country, buyerVat: buyer.vat, promo });
     if (pricing.lines.length === 0) {
       return NextResponse.json({ error: "No valid items in cart" }, { status: 400 });
     }
@@ -86,7 +102,7 @@ export async function POST(request) {
           lines, total_wsp, vat_rate, vat_label, vat_note, vat_amount, shipping_amount, total_with_vat, deposit_amount, balance_amount,
           promo_code, promo_label
         ) values (
-          ${session.id}, ${buyer.company}, ${buyer.contact || null}, ${buyer.address}, ${buyer.city}, ${buyer.country}, ${buyer.zip || null}, ${buyer.vat || null}, ${buyer.email},
+          ${session.id}, ${buyer.company}, ${buyer.contact || null}, ${buyer.address}, ${buyer.city}, ${country}, ${buyer.zip || null}, ${buyer.vat || null}, ${buyer.email},
           ${sql.json(pricing.lines)}, ${pricing.totalWSP}, ${pricing.vatInfo.rate}, ${pricing.vatInfo.label}, ${pricing.vatInfo.note}, ${pricing.vatAmount}, ${pricing.shippingAmount}, ${pricing.totalWithVat}, ${pricing.depositAmount}, ${pricing.balanceAmount},
           ${promo?.code || null}, ${promo?.label || null}
         )

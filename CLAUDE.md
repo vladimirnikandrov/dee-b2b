@@ -74,7 +74,9 @@ lib/                                 — shared between client components and AP
   otp.js                             — OTP email delivery helper
   orders.js                          — toFlatOrderData() — converts a DB row (snake_case) to the flat camelCase shape used by PDF/email/client
   pricing.js                         — Server-authoritative pricing: re-derives all amounts from {sku, qty} + buyer country/VAT. Client is never trusted for price data.
-  vat.js                             — getVatInfo, EU_COUNTRIES, DK_VAT_RATE
+  vat.js                             — getVatInfo, DK_VAT_RATE (country resolution delegated to countries.js)
+  countries.js                       — Canonical ISO country list + alias normalization. The closed set of values a buyer's country may be.
+  migrate.js                         — Migration runner. READ THE RULES AT THE TOP before adding a migration.
   products.js                        — Full SKU catalog: DEE 01-05 (4 sizes each) + DISCOVER ME (see note below)
   seller.js                          — SELLER constants (DA DESIGN APS, CVR 45305481, IBAN, etc.)
   format.js                          — formatEUR (Intl en-IE), SIZE_LABELS
@@ -84,9 +86,15 @@ lib/                                 — shared between client components and AP
   economic.js                        — syncInvoiceToEconomic() — no-op until ECONOMIC_* env vars are set; never blocks order flow on failure
 db/
   schema.sql                        — Canonical current schema (source of truth — apply this to a fresh DB)
-  migration-002-otp-auth.sql          — Historical: added login_otps table, dropped NOT NULL on password_hash
-  migration-003-remove-passwords.sql  — Historical: dropped password_hash column entirely
+  migrations/                         — Auto-applied at boot, newest last. See "Database migrations" below.
+    index.js                          — The ordered list. Append here; never reorder or edit a shipped migration.
+    005-canonical-country.js           — Backfilled buyer_profiles.country to canonical names
+    006-economic-sync-tracking.js      — Added the orders.economic_* columns + backfilled already-invoiced orders
+  migration-002-otp-auth.sql          — Historical (pre-runner, applied by hand): added login_otps, dropped NOT NULL on password_hash
+  migration-003-remove-passwords.sql  — Historical (pre-runner): dropped password_hash column entirely
+  migration-004-sync-failures.sql     — Historical (pre-runner): added the sync_failures table
   seed-data.sql                       — One-time data migrated from the old Supabase database (historical only, do not re-run)
+instrumentation.js                  — Next.js boot hook; runs migrations. Node-only half is instrumentation-node.js.
 CHANGELOG.md                        — Release history
 README.md                           — Project intro + setup
 .env.local.example                  — Template for local env vars
@@ -123,11 +131,28 @@ Admins are managed entirely inside the admin panel — "Admins" section, add by 
 
 **No more 30/70 deposit split** (removed 2026-07-15/17, Vladimir's explicit request): the first invoice is shipping-fee-only, the second is the full order value (goods + VAT). The `deposit_amount`/`balance_amount` DB columns kept their names to avoid a migration but now hold shipping-only / full-order-value respectively — see the comment block in `lib/pricing.js` before touching this.
 
-## VAT logic (`lib/vat.js`)
+## Database migrations
+
+**Schema changes ship with the code that needs them — never by hand.** `instrumentation.js` runs `lib/migrate.js` on every boot, applying anything in `db/migrations/index.js` not yet recorded in the `schema_migrations` table, inside one transaction under an advisory lock. To add one: write `db/migrations/00N-name.js` exporting `{ id, async run(tx) }`, append it to `index.js`, done — the next `git push` deploys and applies it together.
+
+Rules (the full version, with reasoning, is the comment block at the top of `lib/migrate.js`):
+- **Append-only.** Never edit, renumber or reorder a migration that has shipped; it's recorded by `id` and won't run again.
+- **Must be safe while the PREVIOUS release is still serving.** Railway overlaps deployments. Add nullable columns, add tables, backfill — don't drop or rename anything the live code still reads. Split destructive changes across two deploys.
+- All migrations run in one transaction, so nothing needing its own (`CREATE INDEX CONCURRENTLY`) belongs here — that's a `railway run` break-glass job.
+- Write them idempotently anyway (`if not exists`, guarded updates).
+- **A failed migration is fatal on purpose, via an explicit `process.exit(1)`.** Do not "simplify" this into a `throw`. Throwing from the instrumentation hook does NOT stop the server on Next.js 15 — the rejection is swallowed by `prepare().catch(console.error)`, the port stays bound, every request (including static pages) returns 500, and the memoized promises mean it never retries and never recovers. Measured, not assumed. The explicit exit is what makes a failed migration fail the *deploy* and leave the previous version serving.
+- `db/schema.sql` stays the bootstrap for a fresh database. Apply it first, then the runner catches up.
+
+## VAT logic (`lib/vat.js` + `lib/countries.js`)
 - DK → 25% Danish VAT
 - EU + valid VAT ID → 0% reverse charge (Art. 196 Council Directive 2006/112/EC)
 - EU without VAT ID → 25% Danish VAT
 - Outside EU → 0% export
+
+**The country is a closed set, not free text** (since 2026-07-26). `lib/countries.js` owns the canonical ISO list; `getVatInfo` resolves a string to an alpha-2 code and decides from that, so spelling never affects tax. Things to know before touching this:
+- **Never rewrite `orders.buyer_country`.** It's the record of what was actually invoiced. `buyer_profiles.country` is the one that gets canonicalized (migration 005), because it prefills the next order.
+- **`lib/economic.js` derives the VAT zone from the frozen `orders.vat_rate`, not from a fresh `getVatInfo` call.** This is deliberate and load-bearing: draft creation can happen long after the order, so recomputing would let any future improvement to country matching re-book historical orders into a different tax zone than the invoice the buyer holds. There's a regression test for it.
+- Territories outside the EU VAT area (Greenland, Faroes, Åland, French DOMs) are separate entries and land on the export branch — which is what the old hardcoded array did too. Not a settled tax opinion; see the file header.
 
 ## e-conomic integration (`lib/economic.js`)
 Live and verified against Dorte's real account (agreement 1797386 / DA DESIGN ApS) since 2026-07-17. Key things to know before touching this file:
@@ -136,6 +161,10 @@ Live and verified against Dorte's real account (agreement 1797386 / DA DESIGN Ap
 - `SKU_TO_ECONOMIC_PRODUCT` maps this app's SKUs 1:1 to Dorte's real e-conomic product catalog (verified, not guessed) — shipping maps to her "TRANSPORT" product (#1001).
 - `customerGroupNumber` (1=Danish/2=Foreign), `vatZoneNumber` (1=Domestic/2=EU/3=Abroad), `paymentTermsNumber: 4` ("Net 14 days"), `layoutNumber: 22` ("DEE APRIL Sort layout engelsk") were all reverse-engineered from her ~15 existing wholesale customers, not the account defaults — don't change these without re-checking against her live customer list.
 - If `ECONOMIC_APP_SECRET_TOKEN` / `ECONOMIC_AGREEMENT_GRANT_TOKEN` are unset, every sync call is a silent no-op — safe for local dev.
+- **Draft creation is claimed before it happens** (2026-07-26). Two timestamps per invoice: `economic_*_claimed_at` (attempt in flight — the lock) and `economic_*_synced_at` (draft confirmed). `syncInvoiceToEconomic` claims with an `UPDATE … WHERE synced_at IS NULL AND (claimed_at IS NULL OR claimed_at < now() - 15min)` and only posts if it won. That's what stops a re-toggled status from putting a second invoice into her real books. **Keep them separate** — collapsing to one column means a crash between claiming and creating marks the order done forever with no invoice in her books.
+- **The claim is released only when the draft provably was never sent.** If the create request was already dispatched (dropped connection, timeout), the lock is kept and the sync-failure row tells a human to check e-conomic first. Releasing there would book a real duplicate.
+- An order-line edit clears the claim so a corrected draft can be re-issued — that off/on toggle is the only re-issue path the UI has, so don't remove the clearing in `app/api/orders/[id]/route.js` without replacing it. It keeps the old draft *number* deliberately: that stale document still needs deleting by hand in e-conomic.
+- The draft number is read from the create response defensively; the exact field name has never been confirmed against a live call (that would post a real draft into her accounting). "Synced, no number" in the admin panel means that guess is wrong — it does not mean the draft is missing.
 
 ## Known Patterns & Past Fixes
 - **jsPDF € kerning bug**: jsPDF's built-in Helvetica has broken glyph-width metrics for "€" — glues it to the following digit. Fixed with `fmtMoney()` in `lib/invoice-pdf.js` (inserts a space after the symbol) — this wrapper is PDF-only, `formatEUR()` itself (used in HTML/email) is unaffected and must stay that way.

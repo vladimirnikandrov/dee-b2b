@@ -55,7 +55,21 @@ export async function PATCH(request, { params }) {
     return NextResponse.json({ error: "This order is cancelled" }, { status: 409 });
   }
 
-  const [row] = await sql`update orders set ${sql({ [dbKey]: newValue })} where id = ${id} returning *`;
+  // Compare-and-swap on the value we read, rather than a blind write. Two
+  // PATCHes racing (a double-click inside the confirm modal's exit animation,
+  // or Vladimir and Dorte clicking at once) would otherwise both read false,
+  // both compute newValue=true, and both send the invoice email. The e-conomic
+  // claim in lib/economic.js stops the duplicate draft; this stops the
+  // duplicate email and the "second toggle silently flips it back off" case.
+  // `dbKey` is one of the STATUS_KEYS constants checked above, never raw input.
+  const [row] = await sql`
+    update orders set ${sql({ [dbKey]: newValue })}
+    where id = ${id} and ${sql(dbKey)} is not distinct from ${existing[dbKey]}
+    returning *
+  `;
+  if (!row) {
+    return NextResponse.json({ error: "That status was just changed by someone else — reload and try again" }, { status: 409 });
+  }
 
   // Send the matching buyer notification only when the status is toggled ON.
   if (newValue) {
