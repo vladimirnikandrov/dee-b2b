@@ -11,5 +11,6 @@
 // idempotent, so running them against an already-current schema is a no-op).
 import m005 from "./005-canonical-country";
 import m006 from "./006-economic-sync-tracking";
+import m007 from "./007-economic-customer-number";
 
-export const MIGRATIONS = [m005, m006];
+export const MIGRATIONS = [m005, m006, m007];

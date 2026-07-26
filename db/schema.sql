@@ -58,6 +58,10 @@ create table buyer_profiles (
   zip text,
   vat text,
   email text,
+  -- Which customer card in Dorte's e-conomic ledger this buyer resolved to
+  -- (migration 007). Resolved once, then reused — so a re-typed or re-cased
+  -- company name can't create a second card. See lib/economic.js.
+  economic_customer_number integer,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
