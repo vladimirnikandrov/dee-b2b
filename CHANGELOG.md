@@ -46,6 +46,14 @@ Documents now list **shipping above the VAT line** on the invoice view, the PDF,
 
 A four-lens adversarial review (21 findings, all 21 refuted on verification) produced no defects but did surface real nits, all fixed: the checkout summary hadn't been reordered with the other three surfaces; a `??` fallback chain in `lib/economic.js` was unreachable and its comment claimed protection it didn't provide; an `stillHasItems` branch was dead because an emptied order already 400s earlier; the CSV headers didn't say which shipping figure was which. One test was correctly called tautological and was replaced with **the property e-conomic actually depends on** — that `net x 1.25` re-grosses to exactly the quoted figure. It does not hold for every rate (about a fifth of cent values fail at 25%), both configured rates satisfy it, and the test now fails loudly if someone sets one that doesn't.
 
+## 2026-07-27 — Email and invoice presentation
+
+**Email logo halved** (100px to 50px in a 560px email). It was reading as a banner rather than a mark.
+
+**Invoice PDFs are sized to their content** instead of always being a full A4 sheet. The shipping invoice filled a bit over half an A4 page, so a mail client previewed the attachment as a tall mostly-empty black rectangle with its own page outline drawn around all of it. The page is now trimmed to the content plus a margin (A4 width kept, so printing is unaffected) and reads as a compact card against the black email. Done in two passes because jsPDF writes its content stream in PDF user space, whose origin is the bottom-left of the page as it was at draw time — shrinking the page after drawing slides everything off the top instead of trimming the empty bottom.
+
+**Black fill now overshoots the page edge.** Filling exactly `0,0,W,H` left a ~0.004pt uncovered sliver at the right edge from mm-to-point conversion. Verified the rendered page has zero non-black edge pixels. Note: the white outline visible around the attachment in Apple Mail is the mail client's own page border, not part of the document — that one isn't ours to remove.
+
 ## 2026-07-26 (evening) — e-conomic traceability and customer matching
 
 Both resolved by reading e-conomic's own published JSON schemas rather than guessing, which is what had them blocked: `restapi.e-conomic.com/schema/invoices.drafts.{post,get}.schema.json` and `customers.get.schema.json`.
