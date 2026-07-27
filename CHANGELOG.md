@@ -22,7 +22,7 @@ The longstanding tech-debt items previously listed here (monolith split, no TS/t
 
 **Email logo halved** (100px to 50px in a 560px email). It was reading as a banner rather than a mark.
 
-**Invoice PDFs are sized to their content** instead of always being a full A4 sheet. The shipping invoice filled a bit over half an A4 page, so a mail client previewed the attachment as a tall mostly-empty black rectangle with its own page outline drawn around all of it. The page is now trimmed to the content plus a margin (A4 width kept, so printing is unaffected) and reads as a compact card against the black email. Done in two passes because jsPDF writes its content stream in PDF user space, whose origin is the bottom-left of the page as it was at draw time — shrinking the page after drawing slides everything off the top instead of trimming the empty bottom.
+**Invoice PDFs stay plain A4.** Sizing the page to its content was tried and reverted the same day — it previewed better as an email attachment, but these are accounting documents and a non-standard page size is the worse trade.
 
 **Black fill now overshoots the page edge.** Filling exactly `0,0,W,H` left a ~0.004pt uncovered sliver at the right edge from mm-to-point conversion. Verified the rendered page has zero non-black edge pixels. Note: the white outline visible around the attachment in Apple Mail is the mail client's own page border, not part of the document — that one isn't ours to remove.
 
