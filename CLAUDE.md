@@ -2,7 +2,7 @@
 
 ## Project Overview
 B2B wholesale portal for **DEE** (Danish niche perfume brand).
-Client: Dorte (`da@deeapril.com`). Built by PROJECT 1804 (Vladimir Nikandrov).
+Client: Dorte (`da@maison-dee.com`, was `da@deeapril.com`). Built by PROJECT 1804 (Vladimir Nikandrov).
 Live at **order.deeapril.com** and **order.maison-dee.com** (same app, two domains — see Domains section) | Repo: github.com/vladimirnikandrov/dee-b2b
 
 See also: [`README.md`](./README.md) for setup, [`CHANGELOG.md`](./CHANGELOG.md) for release history.
@@ -25,7 +25,7 @@ Do this **before** ending the turn, not as a separate follow-up. The whole point
 - **Frontend**: React 19 (JSX, inline styles — NO Tailwind), Next.js 15 App Router (`"use client"`)
 - **Backend**: Railway Postgres (plain SQL via the `postgres` npm package — no ORM, no RLS), Next.js API Routes handle all authorization in code
 - **Auth**: Passwordless. Every account (buyer or admin) signs in via an emailed 6-digit OTP. JWT session in an httpOnly cookie (`jose`). No passwords anywhere in this app.
-- **Email**: Resend, from `order@deeapril.com` (domain verified)
+- **Email**: Resend. Sender moves to `order@maison-dee.com` — blocked on the Resend plan allowing a second domain (see CHANGELOG backlog); every other address in the code is already on maison-dee.com.
 - **PDF**: jsPDF (server-side, dark mode, logo cached from local file)
 - **Accounting sync**: e-conomic REST API (Dorte's real, live account) — invoice drafts created server-side on real invoicing events
 - **Hosting**: Railway (single project: Next.js app service + Postgres addon), Nixpacks auto-build. No Vercel, no Supabase — fully migrated off both 2026-07.
@@ -118,7 +118,7 @@ Fully passwordless, buyer and admin identical mechanism:
 2. `POST /api/auth/verify-otp` with the code — validates, signs a JWT (`role` embedded), sets an httpOnly `da_session` cookie (30-day expiry).
 3. Every protected route calls `requireAuth()` (any logged-in user) or `requireAdmin()` (`role === "admin"` only) from `lib/auth.js`.
 
-Admins are managed entirely inside the admin panel — "Admins" section, add by email (auto-creates the account + sends a Resend welcome email), remove with guards against self-removal and removing the last admin. Current admins: `hello@project-1804.com` (Vladimir) and `da@deeapril.com` (Dorte).
+Admins are managed entirely inside the admin panel — "Admins" section, add by email (auto-creates the account + sends a Resend welcome email), remove with guards against self-removal and removing the last admin. Current admins: `hello@project-1804.com` (Vladimir) and `da@maison-dee.com` (Dorte).
 
 ## Order Flow
 1. Buyer registers / signs in via OTP.
@@ -201,7 +201,7 @@ Live and verified against Dorte's real account (agreement 1797386 / DA DESIGN Ap
 See [`.env.local.example`](./.env.local.example) for the full list with descriptions. Set the same values in **Railway → Project → Variables** for production (Railway auto-injects `DATABASE_URL` when the Postgres addon is linked — don't set it manually).
 
 ## Domains
-- `order.deeapril.com` — original domain, still the default (`SITE_URL` fallback in `lib/email.js`).
+- `order.deeapril.com` — original domain. **The registration expires 2026-12-16** and is being retired; it still serves the portal until then.
 - `order.maison-dee.com` — added 2026-07. Both domains serve the identical Railway app. The brand itself was renamed to plain **"DEE"** on 2026-07-24 (see CHANGELOG) — the domain question (which URL becomes primary, whether the sender email moves off `deeapril.com`) is separate and still open, don't assume either domain "wins" just because of the brand name.
 - DNS for both (plus the defensively-registered `maisondeeapril.com`) is on Cloudflare, currently under Vladimir's personal account — flagged in the backlog to eventually move to Dorte's own accounts (Railway, Resend, Cloudflare, GitHub) alongside the domain registrar itself.
 
