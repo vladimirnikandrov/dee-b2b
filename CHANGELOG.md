@@ -11,10 +11,24 @@ As of 2026-07-24, the `web` service is connected directly to this repo's `main` 
 Nothing in progress. Don't start any of these without an explicit ask from Vladimir.
 
 1. **Move Railway/Resend/GitHub off Vladimir's personal accounts onto Dorte's own** — Cloudflare and the domain registrar are already sorted (per Vladimir, 2026-07-24); these three are what's left. e-conomic does not need it — already her own agreement (1797386 / DA DESIGN ApS).
-2. **Switch sender/reply email to `order@maison-dee.com`** — blocked on Dorte creating that mailbox (not done yet as of 2026-07-24). Once it exists: update `RESEND_FROM_EMAIL` in Railway, `lib/seller.js`'s `email` field, and verify the new sending domain in Resend.
+2. **Move the Resend sender to `order@maison-dee.com`.** The mailbox now exists and every other address in the code already points at it; `lib/seller.js` is done. What is left is blocked purely by the Resend plan's one-domain limit: `deeapril.com` holds the only slot, and freeing it stops all outbound mail — OTP codes included, so nobody can sign in — until `maison-dee.com` verifies. Either upgrade the plan (no outage) or pick a quiet window, then set `RESEND_FROM_EMAIL` in Railway. Must happen before 2026-12-16 regardless, or sending breaks by itself when the domain lapses.
 3. **A reused e-conomic customer card keeps its old `vatZone`/country.** `getOrCreateCustomer` deliberately does not write back to an existing card — Dorte maintains those by hand for her ~15 existing wholesale customers, and the invoice's own VAT treatment comes from the draft's `recipient` block regardless, so overwriting her records from checkout form data would risk destroying real information to fix a reporting-only discrepancy. Left as-is on purpose; revisit only if her customer list turns out to disagree with reality in a way that matters.
 
 The longstanding tech-debt items previously listed here (monolith split, no TS/tests, silent sync failures) have all been worked through as of 2026-07-24 — see the dated entries below. DEE 04/05 pricing confirmed fine as-is (Vladimir, 2026-07-24) — no longer a backlog item. From the 2026-07-26 audit: free-text country and e-conomic draft idempotency were resolved the same day, and draft traceability + customer duplication the same evening — all four are in the dated entries below.
+
+---
+
+## 2026-07-29 — Email identity moved to maison-dee.com
+
+`deeapril.com` expires **2026-12-16**, so the whole email identity moved to `maison-dee.com` while there is still time to do it calmly.
+
+**In Google Workspace:** `maison-dee.com` added as a *secondary* domain — not a user-alias domain, because only a secondary can later be promoted — and verified by TXT rather than by handing Google OAuth write access to the entire Cloudflare zone. MX, SPF, DMARC and DKIM published for it. The primary domain was then switched to `maison-dee.com`, which automatically demoted `deeapril.com` to secondary. All five accounts renamed to `@maison-dee.com`; Google keeps each previous address as an alias automatically, so nothing sent to an old name is lost. `deeapril.com` is deliberately LEFT as a secondary domain rather than converted to a domain alias — the per-user aliases already cover continuity, and a domain alias would keep minting addresses on a domain that is being retired.
+
+**In this codebase** — every address except the actual sender: `lib/seller.js` (seller contact printed on invoices) and `lib/email.js` (`ADMIN_EMAIL` recipient, the footer line on every email, the "contact us at" line on cancellations, and the `PORTAL_URL` fallback). Safe to ship immediately: `order@maison-dee.com` is a real mailbox that receives, and the From address is env-driven and untouched, so sending is unaffected by this deploy.
+
+**Not changed, on purpose:** the privacy policy and EULA still name *both* `order.deeapril.com` and `order.maison-dee.com`. Both really do serve the portal today, and dropping the old one would leave anyone arriving on that URL covered by a document that doesn't mention it. They get cleaned up when the domain is actually retired.
+
+**Transcription note:** the Google DKIM key had to be copied by hand from a screenshot, and three characters came across wrong — `I` (capital i) versus `l` (lowercase L), indistinguishable in the console's font. Google refused to verify, correctly. Caught by decoding the base64 as a DER RSA key locally and then diffing character-by-character against the console's own copy. Anything hand-copied from a screenshot deserves that kind of check before it goes anywhere near DNS.
 
 ---
 
