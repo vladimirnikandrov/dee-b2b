@@ -23,6 +23,29 @@ The longstanding tech-debt items previously listed here (monolith split, no TS/t
 
 ---
 
+## 2026-08-01 — Stop local development from emailing real customers
+
+Between 3 and 26 July, real retailers received real transactional emails whose logo and "View Order" link pointed at `http://localhost:3000`. Eleven of twenty-nine audited sends were affected, across three templates.
+
+**The reported cause was wrong, and that is worth recording because it was a plausible-looking wrong answer.** The bug report attributed it to a base URL "silently falling back to `http://localhost:3000`" when an env var was unset. No such fallback exists in this codebase and `git log -S localhost:3000 -- lib/email.js` returns nothing — the fallback has always been a production URL.
+
+The real mechanism is entirely environmental. `.env.local` carried `SITE_URL=http://localhost:3000` **together with the production Resend key**, and `db/seed-data.sql` — the one-time export from the old Supabase database — contains real customer addresses. So `npm run dev` plus any action that sends mail equalled a real email, to a real client, from the verified production domain, carrying dead localhost links. Several of those sends came from this project's own audit sessions requesting OTPs against localhost. The same mechanism explains another item in that report: the "order-number collision" on `DA-2607-1005` is just the local and production sequences both starting at 1000, not a broken generator.
+
+Care cannot fix this, because "someone runs the app locally" is the normal thing to do. So the fix is a guard at the single point every message passes through, `sendTransactionalEmail` in `lib/email.js`, with the two questions deliberately split by environment:
+
+- **Outside production** (SITE_URL host is neither `order.maison-dee.com` nor `order.deeapril.com`) the question is **who**: nothing is sent to anyone outside `DEV_EMAIL_ALLOWLIST`. Localhost URLs in the body are fine there — that is exactly what local testing looks like, and blocking them would only get the guard switched off by whoever needs to test.
+- **In production** the question is **what**: every recipient is legitimate, but a body matching `localhost|127.0.0.1|.railway.app|.vercel.app|http://` is refused. That can only mean a wrong deployed `SITE_URL` or a stray absolute URL in a template. The plain-`http://` check earns its place: every real portal URL is https, so its presence is itself the evidence.
+
+A blocked send returns `{ blocked: true }` rather than throwing, so the PDF-failure fallback paths in the order routes still behave. It deliberately does not create a sync-failure row — in local development that is the guard working, and filling the admin panel with those teaches everyone to ignore it.
+
+Verified by running the real thing, not just unit tests: with the dev server on localhost, an OTP request for `da@deeapril.com` (a genuine client address sitting in the local seed) was blocked with nothing leaving the machine, while the same request for an allowlisted address was delivered normally. Eight unit tests cover the matrix, including the case that matters most — that production sending is completely unaffected. That was checked against the live `SITE_URL`, evidenced by the logo URL in an actual production email rather than assumed.
+
+Also corrected in `.env.local`: `RESEND_FROM_EMAIL` still read `Dee April Parfums <order@deeapril.com>`, a domain no longer verified in Resend.
+
+Two other items from the same report needed no action — the stale `Dee April Parfums` brand strings and the hardcoded `order@deeapril.com` in the cancellation template were both fixed on 2026-07-29. The report was analysing messages sent before that change.
+
+---
+
 ## 2026-07-29 — Email identity moved to maison-dee.com
 
 `deeapril.com` expires **2026-12-16**, so the whole email identity moved to `maison-dee.com` while there is still time to do it calmly.
