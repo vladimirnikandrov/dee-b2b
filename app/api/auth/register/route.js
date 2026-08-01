@@ -7,12 +7,13 @@ import { issueLoginOtp } from "@/lib/otp";
 // The client follows up with POST /api/auth/verify-otp to actually log in.
 export async function POST(request) {
   try {
-    const { email, company } = await request.json();
+    const { email: rawEmail, company } = await request.json();
+    const email = String(rawEmail || "").trim().toLowerCase();
     if (!email || !company) {
       return NextResponse.json({ error: "Company name and email are required" }, { status: 400 });
     }
 
-    const [existing] = await sql`select id from users where email = ${email}`;
+    const [existing] = await sql`select id from users where lower(email) = ${email}`;
     if (existing) {
       return NextResponse.json({ error: "An account with this email already exists" }, { status: 409 });
     }

@@ -92,11 +92,17 @@ export async function PATCH(request, { params }) {
             console.error(`${key} fallback (no PDF) also failed:`, e2);
           }
         });
-      // Deposit already synced to e-conomic at order creation (see
-      // app/api/orders/route.js) — only balance is a genuinely new
-      // invoicing event triggered here.
+      // Deposit is normally synced at order creation (app/api/orders/route.js),
+      // so re-toggling it is not an invoicing event and must not create a second
+      // draft. But if that first attempt FAILED, nothing else in the app could
+      // ever try again — the shipping invoice was simply missing from Dorte's
+      // books, permanently, with only a sync-failure row to show for it. The
+      // claim in lib/economic.js is what makes this safe: if the draft did get
+      // created, the claim is already held and this call is a no-op.
       if (key === "balance_invoiced") {
         syncInvoiceToEconomic(flatOrder, "balance").catch((e) => console.error("e-conomic balance sync failed:", e));
+      } else if (key === "deposit_invoiced" && !row.economic_deposit_synced_at) {
+        syncInvoiceToEconomic(flatOrder, "deposit").catch((e) => console.error("e-conomic deposit retry failed:", e));
       }
     } else {
       sendTransactionalEmail(key, flatOrder).catch((e) => console.error(`${key} email failed:`, e));

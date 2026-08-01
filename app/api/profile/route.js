@@ -27,9 +27,15 @@ export async function PUT(request) {
   // creation is where an unresolvable country is actually blocked.
   const canonicalCountry = normalizeCountry(country) || country;
 
+  // Same reason as POST /api/orders: the address every invoice and status
+  // email is delivered to comes from the session, never from the request body.
+  // Otherwise a buyer could point their profile at anyone and have the portal
+  // mail them from the verified sending domain.
+  const canonicalEmail = session.email;
+
   await sql`
     insert into buyer_profiles (user_id, company, contact, address, city, country, zip, vat, email, updated_at)
-    values (${session.id}, ${company}, ${contact}, ${address}, ${city}, ${canonicalCountry}, ${zip}, ${vat}, ${email}, now())
+    values (${session.id}, ${company}, ${contact}, ${address}, ${city}, ${canonicalCountry}, ${zip}, ${vat}, ${canonicalEmail}, now())
     on conflict (user_id) do update set
       company = excluded.company, contact = excluded.contact, address = excluded.address,
       city = excluded.city, country = excluded.country, zip = excluded.zip,

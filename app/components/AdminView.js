@@ -14,13 +14,22 @@ import { base, ConfirmModal, Header, NoteSection, inputStyle, labelStyle, FONT, 
 // second or two after toggling); blue = superseded, meaning the order was
 // edited after this draft was posted and the old document is still sitting in
 // her accounting waiting to be deleted by hand; amber = genuinely nothing sent.
-function EconomicSync({ economic, statuses }) {
+function EconomicSync({ economic, statuses, cancelled }) {
   if (!economic) return null; // buyer view, or a row from before migration 006
   const rows = [
     { label: "Shipping", claimed: economic.depositClaimedAt, synced: economic.depositSyncedAt, num: economic.depositDraftNumber, expected: statuses.deposit_invoiced },
     { label: "Full", claimed: economic.balanceClaimedAt, synced: economic.balanceSyncedAt, num: economic.balanceDraftNumber, expected: statuses.balance_invoiced },
   ].filter((r) => r.expected);
-  if (rows.length === 0) return null;
+
+  // Every draft that must be removed from e-conomic by hand: the ones an edit
+  // replaced, plus — for a cancelled order — the live drafts themselves, since
+  // cancelling here cannot retract a document already in her accounting.
+  const orphaned = [
+    ...(economic.supersededDrafts || []),
+    ...(cancelled ? rows.filter((r) => r.synced && r.num).map((r) => r.num) : []),
+  ];
+
+  if (rows.length === 0 && orphaned.length === 0) return null;
 
   const state = (r) => {
     if (r.synced) return { text: r.num ? `draft #${r.num}` : "sent", fg: "#4ade80", bg: "#0c1a12", bd: "#1f3d2b" };
@@ -42,6 +51,11 @@ function EconomicSync({ economic, statuses }) {
           </span>
         );
       })}
+      {orphaned.length > 0 && (
+        <span style={{padding:"4px 9px",borderRadius:6,border:"1px solid #4a1010",background:"#1a0a0a",color:"#f87171"}}>
+          Delete in e-conomic: {orphaned.map((n) => `#${n}`).join(", ")}
+        </span>
+      )}
     </div>
   );
 }
@@ -376,7 +390,7 @@ export default function AdminView({
                       <button key={s.key} onClick={()=>toggleOrderStatus(order.id,s.key)} className="da-status-step" style={{padding:"8px 14px",borderRadius:8,fontSize:10,fontWeight:order.statuses[s.key]?600:400,border:`2px solid ${order.statuses[s.key]?"#fff":"#444"}`,background:order.statuses[s.key]?"#000":"transparent",color:order.statuses[s.key]?"#fff":"#999",cursor:"pointer",fontFamily:FONT,textTransform:"uppercase",letterSpacing:"0.08em",transition:"all 0.2s"}}>{s.label}</button>
                     ))}
                   </div>
-                  <EconomicSync economic={order.economic} statuses={order.statuses} />
+                  <EconomicSync economic={order.economic} statuses={order.statuses} cancelled={order.cancelled} />
                 </div>
                 <div className="da-order-actions" style={{display:"flex",gap:8}}>
                   <button className="da-btn da-btn-outline" onClick={()=>handleViewInvoice(order.id,"admin","deposit")} style={{background:"transparent",border: "1px solid #222",padding:"9px 18px",borderRadius:10,fontSize:10,color: "#eee",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase",transition:"all 0.25s"}}>Shipping Invoice</button>

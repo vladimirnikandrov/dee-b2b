@@ -17,7 +17,19 @@ export async function PATCH(request, { params }) {
 
   try {
     await sql.begin(async (tx) => {
-      for (const line of row.lines || []) {
+      // Same compare-and-swap as cancel, and for the same reason: `row` was
+      // read outside this transaction, so two concurrent restores both saw
+      // cancelled=true and the old code deducted every line twice. Claim first,
+      // and if the flag has already been flipped, match nothing and abort
+      // before touching inventory.
+      const [claimed] = await tx`
+        update orders set cancelled = false
+        where id = ${id} and cancelled = true
+        returning *
+      `;
+      if (!claimed) throw new Error("Order is not cancelled");
+
+      for (const line of claimed.lines || []) {
         // A SKU with no inventory row isn't tracked at all — cancel didn't
         // credit anything back for it, so there's nothing to re-deduct here.
         // Without this check the decrement matches no row and the whole

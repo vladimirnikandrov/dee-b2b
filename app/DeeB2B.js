@@ -167,9 +167,10 @@ export default function DeeB2B() {
   // Inventory is public (stock badges on the catalogue). Promo codes are NOT —
   // they only load once we know the session is an admin, which the admin-view
   // effect below handles.
+  // Stock needs a session now, so load it when one appears rather than on mount.
   useEffect(() => {
-    loadInventory();
-  }, []);
+    if (session) loadInventory();
+  }, [session]);
 
   // Admin-only now: this returns every code WITH its price table, so it must
   // never be fetched for ordinary visitors. It used to run on mount for
@@ -193,6 +194,9 @@ export default function DeeB2B() {
   const loadInventory = async () => {
     try {
       const res = await fetch("/api/inventory");
+      // Anonymous visitors on the landing page get a 401 now that stock is
+      // behind a login — that is expected, not an error worth logging.
+      if (res.status === 401) return;
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const { inventory: rows } = await res.json();
       const inv = {};
@@ -212,14 +216,31 @@ export default function DeeB2B() {
   const saveInventory = async () => {
     if (!inventoryLoaded) { showToast("Inventory not loaded — refresh before saving"); return; }
     try {
+      // Send what this page believed each SKU held when it loaded, so the
+      // server can refuse a row that moved since. Sending only the new value
+      // meant an order placed while the panel sat open was silently undone:
+      // every untouched SKU got rewritten to its stale figure on Save All.
       const records = [];
       PRODUCTS.forEach(p => {
         p.variants.forEach(v => {
-          records.push({ sku: v.sku, product_name: p.name, size: v.size, stock: inventory[v.sku] || 0 });
+          records.push({
+            sku: v.sku,
+            product_name: p.name,
+            size: v.size,
+            stock: inventory[v.sku] || 0,
+            previousStock: inventorySaved[v.sku] === undefined ? null : inventorySaved[v.sku],
+          });
         });
       });
       const res = await fetch("/api/inventory", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ records }) });
-      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `HTTP ${res.status}`); }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        // A stale-snapshot conflict is not an error the admin caused — reload
+        // so the screen shows the truth instead of leaving them staring at
+        // numbers the server just rejected.
+        if (res.status === 409 && d.conflicts) { showToast(d.error); await loadInventory(); return; }
+        throw new Error(d.error || `HTTP ${res.status}`);
+      }
       setInventorySaved({ ...inventory });
       showToast("Inventory saved");
     } catch (e) {
@@ -391,16 +412,35 @@ export default function DeeB2B() {
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items, buyer, promoCode: appliedPromo?.code || null }),
+        // `expectedTotal` is the figure the buyer just confirmed on screen. The
+        // server re-derives everything itself and refuses if the two disagree,
+        // which closes the whole class of "confirmed one price, invoiced
+        // another" — a promo whose prices were edited between applying it and
+        // submitting, a catalogue price change, a shipping-rate change, or
+        // simply a page left open overnight.
+        body: JSON.stringify({ items, buyer, promoCode: appliedPromo?.code || null, expectedTotal: totalWithVat }),
       });
       const data = await res.json();
-      if (!res.ok) { logError("handleSubmitOrder", data.error); showToast(data.error || "Failed to place order"); return; }
+      if (!res.ok) {
+        logError("handleSubmitOrder", data.error);
+        showToast(data.error || "Failed to place order");
+        // A price mismatch means this page is out of date — refresh the things
+        // it prices from so the retry shows the real numbers.
+        if (res.status === 409 && data.priceChanged) { await loadInventory(); setAppliedPromo(null); }
+        return;
+      }
 
       await loadOrders();
       await loadInventory();
       const placedOrderId = data.order.id;
       setViewingOrderId(placedOrderId);
       setInvoiceSource("buyer");
+      // A newly placed order is always shown as its SHIPPING invoice — that is
+      // the document that was just emailed and the only one due. Without this
+      // reset the view kept whatever type was last opened, so a buyer who had
+      // looked at an old full invoice saw their new order presented as a demand
+      // for the entire order value.
+      setInvoiceViewType("deposit");
       setView("invoice");
       showToast("Order placed — " + placedOrderId);
       setQuantities({});
@@ -451,6 +491,14 @@ export default function DeeB2B() {
   // balance_invoiced also pushes a draft into Dorte's live e-conomic account.
   // The status pills sit 6px apart with a hover scale — one misclick shouldn't
   // be able to do that. Turning a status OFF sends nothing, so it stays instant.
+  // `turningOn` is read from the client's copy of the order, which can be
+  // minutes old — another admin (or the same person in another tab) may have
+  // moved it since. The server's compare-and-swap catches a genuine conflict
+  // and answers 409, and doToggleStatus reloads on that, so the worst case is
+  // a wasted click rather than a wrong email. What must NOT happen is deciding
+  // to skip the confirmation dialog off stale state: that is how "Send Invoice"
+  // silently became "un-invoice", and the next click then emailed the buyer a
+  // second copy.
   const toggleOrderStatus = (orderId, key) => {
     const order = allOrders.find(o => o.id === orderId);
     const turningOn = order && !order.statuses[key];
@@ -483,17 +531,40 @@ export default function DeeB2B() {
     }
   };
 
-  const deleteOrder = (orderId) => {
+  // `force` skips the server's e-conomic guard. Only ever reached through the
+  // second confirmation below, once the drafts have actually been dealt with.
+  const deleteOrder = (orderId, force = false) => {
     askConfirm({
-      title: "Delete Order Permanently",
-      message: `This will permanently delete order ${orderId}. This cannot be undone.`,
+      title: force ? "Delete Anyway" : "Delete Order Permanently",
+      message: force
+        ? `Only continue if those drafts are already deleted in e-conomic. Deleting order ${orderId} here removes the last record of which drafts belonged to it.`
+        : `This will permanently delete order ${orderId}. This cannot be undone.`,
       confirmLabel: "Delete",
       danger: true,
       onConfirm: async () => {
         try {
-          const res = await fetch(`/api/orders/${orderId}`, { method: "DELETE" });
+          const res = await fetch(`/api/orders/${orderId}${force ? "?force=1" : ""}`, { method: "DELETE" });
           const data = await res.json().catch(() => ({}));
-          if (!res.ok) { logError("deleteOrder", data.error); showToast("Failed to delete — " + (data.error || "")); closeConfirm(); return; }
+          if (!res.ok) {
+            logError("deleteOrder", data.error);
+            // The e-conomic refusal is actionable advice, not a failure. Swap
+            // the open modal for the override rather than leaving a dead end —
+            // the drafts have to be deleted in e-conomic by hand, and once that
+            // is done there has to be a way to finish the job here.
+            if (data.economicDrafts && !force) {
+              askConfirm({
+                title: "Still In e-conomic",
+                message: data.error,
+                confirmLabel: "I've deleted them",
+                danger: true,
+                onConfirm: () => { closeConfirm(); deleteOrder(orderId, true); },
+              });
+              return;
+            }
+            showToast("Failed to delete — " + (data.error || ""));
+            closeConfirm();
+            return;
+          }
           setAllOrders(prev => prev.filter(o => o.id !== orderId));
           closeConfirm();
           showToast("Order " + orderId + " deleted");
@@ -581,12 +652,22 @@ export default function DeeB2B() {
       return;
     }
     setQuantities(newQtys);
-    // Same normalization as loadProfile — a repeated old order must not carry
-    // its free-text country back into a new checkout unresolved.
-    setBuyer({...order.buyer, country: normalizeCountry(order.buyer?.country) || order.buyer?.country || ""});
+    // Deliberately does NOT overwrite `buyer`. It used to copy the historical
+    // order's snapshot over the live profile — so repeating a two-year-old
+    // order silently restored that address, and the logout auto-save then
+    // persisted it. The current profile is the buyer's own, already loaded, and
+    // checkout is where they change it if they want to.
     if (order.promoCode) {
-      const promo = promoCodes.find(p => p.code === order.promoCode);
-      if (promo) setAppliedPromo(promo);
+      // The client no longer holds the code table (it was public and leaked),
+      // so re-validate against the server, which is the authority anyway.
+      fetch("/api/promo-codes", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: order.promoCode }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (d?.promo) setAppliedPromo(d.promo); })
+        .catch(() => {});
     }
     setView("checkout");
     showToast(adjusted ? "Order duplicated — quantities adjusted to current stock" : "Order duplicated — review and confirm");
@@ -626,7 +707,17 @@ export default function DeeB2B() {
       // any group-by in Excel double-counts them.
       rows.push([o.id, new Date(o.date).toISOString().slice(0,10), o.buyer.company, o.buyer.email, normalizeCountry(o.buyer.country) || o.buyer.country || "", o.buyer.vat||"", items, money(o.totalWSP), money(o.vatAmount), money(o.shipping), money(o.totalWithVat), money(o.depositAmount), money(o.balanceAmount), statusStr, o.promoCode||"", o.cancelled?"Yes":"No"]);
     });
-    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+    // Excel and Numbers treat a cell starting with = + - or @ as a formula,
+    // even inside quotes. Company names and contact fields are buyer-supplied,
+    // so `=HYPERLINK(...)` typed at registration would execute when Dorte opens
+    // the export. Prefixing a tab neutralises it without changing what she
+    // reads. https://owasp.org/www-community/attacks/CSV_Injection
+    const csvCell = (c) => {
+      const s = String(c ?? "");
+      const safe = /^[=+\-@\t\r]/.test(s) ? `\t${s}` : s;
+      return `"${safe.replace(/"/g, '""')}"`;
+    };
+    const csv = rows.map(r => r.map(csvCell).join(",")).join("\n");
     const blob = new Blob([csv], {type:"text/csv"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = `dee-b2b-orders-${new Date().toISOString().slice(0,10)}.csv`;

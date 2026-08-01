@@ -4,44 +4,57 @@ import { signSession, setSessionCookie, OTP_MAX_ATTEMPTS } from "@/lib/auth";
 
 export async function POST(request) {
   try {
-    const { email, code } = await request.json();
+    const { email: rawEmail, code } = await request.json();
+    // Identity is case-insensitive (migration 010) — normalise once, here, so
+    // every query and every row we write agrees on the same string.
+    const email = String(rawEmail || "").trim().toLowerCase();
     if (!email || !code) return NextResponse.json({ error: "Email and code are required" }, { status: 400 });
 
-    const [otp] = await sql`
-      select * from login_otps
-      where email = ${email} and used_at is null
-      order by created_at desc limit 1
-    `;
-    if (!otp) return NextResponse.json({ error: "No active code — request a new one" }, { status: 400 });
-    if (new Date(otp.expires_at) < new Date()) {
-      return NextResponse.json({ error: "This code has expired — request a new one" }, { status: 400 });
-    }
-    // Claim an attempt atomically BEFORE comparing the code. Checking
-    // `attempts` and incrementing it in two separate statements let a burst of
-    // concurrent requests all read attempts=0 and each get a free guess, which
-    // turned the 5-attempt cap into "unlimited attempts per burst" against the
-    // app's only authentication factor. Concurrent updates to the same row
-    // serialize on Postgres' row lock, so this is a real ceiling.
-    const [attempt] = await sql`
+    // Consume ANY live code for this address, not merely the newest one.
+    // Checking only the newest meant anyone could lock a person out simply by
+    // requesting codes for their address: each request superseded the code the
+    // real owner was holding, so their correct code was rejected forever. With
+    // the only admin account that is a permanent lockout, from an
+    // unauthenticated attacker.
+    //
+    // The claim is one atomic statement — matching, expiry, attempt cap and
+    // consumption together — so a burst of concurrent guesses cannot each read
+    // attempts=0 and get a free try against the app's only auth factor.
+    const [match] = await sql`
       update login_otps
-      set attempts = attempts + 1
-      where id = ${otp.id} and attempts < ${OTP_MAX_ATTEMPTS} and used_at is null
-      returning attempts, code
+      set used_at = now()
+      where email = ${email}
+        and used_at is null
+        and expires_at > now()
+        and attempts < ${OTP_MAX_ATTEMPTS}
+        and code = ${String(code).trim()}
+      returning id
     `;
-    if (!attempt) {
-      return NextResponse.json({ error: "Too many attempts — request a new code" }, { status: 429 });
+
+    if (!match) {
+      // Wrong (or exhausted, or expired). Burn an attempt on every live code so
+      // guessing is bounded, and report the state without revealing which.
+      const spent = await sql`
+        update login_otps
+        set attempts = attempts + 1
+        where email = ${email} and used_at is null and expires_at > now() and attempts < ${OTP_MAX_ATTEMPTS}
+        returning attempts
+      `;
+      if (spent.length === 0) {
+        return NextResponse.json({ error: "No active code — request a new one" }, { status: 400 });
+      }
+      const remaining = Math.max(0, OTP_MAX_ATTEMPTS - Math.max(...spent.map((r) => r.attempts)));
+      return NextResponse.json(
+        { error: `Incorrect code — ${remaining} attempt${remaining === 1 ? "" : "s"} left` },
+        { status: 400 }
+      );
     }
 
-    if (attempt.code !== code.trim()) {
-      const remaining = Math.max(0, OTP_MAX_ATTEMPTS - attempt.attempts);
-      return NextResponse.json({ error: `Incorrect code — ${remaining} attempt${remaining === 1 ? "" : "s"} left` }, { status: 400 });
-    }
-
-    // Retire every outstanding code for this email, not just the one used —
-    // otherwise an older code that was emailed but never consumed stays valid.
+    // Retire every other outstanding code for this email — otherwise an older
+    // code that was emailed but never consumed stays valid.
     await sql`update login_otps set used_at = now() where email = ${email} and used_at is null`;
 
-    const [user] = await sql`select id, email, role from users where email = ${email}`;
+    const [user] = await sql`select id, email, role from users where lower(email) = ${email}`;
     if (!user) return NextResponse.json({ error: "Account not found" }, { status: 404 });
 
     const token = await signSession({ id: user.id, email: user.email, role: user.role });

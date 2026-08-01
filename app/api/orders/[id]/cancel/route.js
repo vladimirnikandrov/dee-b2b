@@ -28,14 +28,33 @@ export async function PATCH(request, { params }) {
   }
 
   const updated = await sql.begin(async (tx) => {
+    // Claim the cancellation FIRST, conditional on it not already being
+    // cancelled. The `row` above was read outside this transaction, so two
+    // concurrent cancels (a double-click, or buyer and admin at once) both saw
+    // cancelled=false and both got here — and the old code refunded inventory
+    // unconditionally, crediting every line twice and inventing stock that was
+    // never returned. Making the flag flip the thing that has to win means the
+    // loser matches no row and touches nothing.
+    const [claimed] = await tx`
+      update orders set cancelled = true
+      where id = ${id} and cancelled = false
+      returning *
+    `;
+    if (!claimed) return null;
+
     // Refund inventory for every line — the old flow never did this, so
     // stock sold on a since-cancelled order was gone from the counter forever.
-    for (const line of row.lines || []) {
+    // Read the lines off the row we just claimed, not the stale pre-transaction
+    // copy, so an edit landing in between can't make us refund the wrong sizes.
+    for (const line of claimed.lines || []) {
       await tx`update inventory set stock = stock + ${line.qty}, updated_at = now() where sku = ${line.sku}`;
     }
-    const [r] = await tx`update orders set cancelled = true where id = ${id} returning *`;
-    return r;
+    return claimed;
   });
+
+  if (!updated) {
+    return NextResponse.json({ error: "Order is already cancelled" }, { status: 409 });
+  }
 
   const flatOrder = toFlatOrderData(updated);
   sendTransactionalEmail("order_cancelled_buyer", flatOrder).catch((e) => console.error("order_cancelled_buyer email failed:", e));

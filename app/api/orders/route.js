@@ -35,13 +35,22 @@ export async function POST(request) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const { items, buyer, promoCode } = await request.json();
+    const { items, buyer, promoCode, expectedTotal } = await request.json();
     if (!Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: "Cart is empty" }, { status: 400 });
     }
     if (!buyer?.company || !buyer?.address || !buyer?.city || !buyer?.country || !buyer?.email) {
       return NextResponse.json({ error: "Missing required buyer details" }, { status: 400 });
     }
+
+    // Pin the address to the signed-in account. It used to be taken from the
+    // request body, so a buyer could put anyone's address on an order and have
+    // the portal deliver a confirmation, an invoice PDF and every later status
+    // email to them, from the verified sending domain — the same domain the
+    // login codes depend on, so the deliverability damage would have locked
+    // real buyers out. It also meant a typo silently diverted someone's own
+    // invoices with nothing to notice.
+    const buyerEmail = session.email;
 
     // The country string decides the VAT treatment of the whole order, so it
     // has to resolve to a real country before anything is priced. Before the
@@ -60,7 +69,7 @@ export async function POST(request) {
     // Save/refresh buyer profile (replaces the old client-side saveProfile() call).
     await sql`
       insert into buyer_profiles (user_id, company, contact, address, city, country, zip, vat, email, updated_at)
-      values (${session.id}, ${buyer.company}, ${buyer.contact || null}, ${buyer.address}, ${buyer.city}, ${country}, ${buyer.zip || null}, ${buyer.vat || null}, ${buyer.email}, now())
+      values (${session.id}, ${buyer.company}, ${buyer.contact || null}, ${buyer.address}, ${buyer.city}, ${country}, ${buyer.zip || null}, ${buyer.vat || null}, ${buyerEmail}, now())
       on conflict (user_id) do update set
         company = excluded.company, contact = excluded.contact, address = excluded.address,
         city = excluded.city, country = excluded.country, zip = excluded.zip,
@@ -83,6 +92,25 @@ export async function POST(request) {
       return NextResponse.json({ error: "No valid items in cart" }, { status: 400 });
     }
 
+    // Refuse if the buyer confirmed a different total to the one we just
+    // computed. Everything here is server-derived and would otherwise silently
+    // win, so a promo edited mid-checkout, a catalogue price change, or a page
+    // left open overnight would invoice an amount nobody agreed to. Compared
+    // with a cent of tolerance because both sides round independently.
+    if (expectedTotal !== undefined && expectedTotal !== null) {
+      const diff = Math.abs(Number(expectedTotal) - pricing.totalWithVat);
+      if (!Number.isFinite(diff) || diff > 0.01) {
+        return NextResponse.json(
+          {
+            error: `Prices changed while you were checking out — this order now comes to €${pricing.totalWithVat.toFixed(2)}, not €${Number(expectedTotal).toFixed(2)}. Please review and try again.`,
+            priceChanged: true,
+            total: pricing.totalWithVat,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     // Pre-check stock for a clear error message, then re-check atomically
     // inside the transaction below (belt-and-suspenders against a race
     // between this check and the actual decrement).
@@ -102,7 +130,7 @@ export async function POST(request) {
           lines, total_wsp, vat_rate, vat_label, vat_note, vat_amount, shipping_amount, shipping_vat_amount, total_with_vat, deposit_amount, balance_amount,
           promo_code, promo_label
         ) values (
-          ${session.id}, ${buyer.company}, ${buyer.contact || null}, ${buyer.address}, ${buyer.city}, ${country}, ${buyer.zip || null}, ${buyer.vat || null}, ${buyer.email},
+          ${session.id}, ${buyer.company}, ${buyer.contact || null}, ${buyer.address}, ${buyer.city}, ${country}, ${buyer.zip || null}, ${buyer.vat || null}, ${buyerEmail},
           ${sql.json(pricing.lines)}, ${pricing.totalWSP}, ${pricing.vatInfo.rate}, ${pricing.vatInfo.label}, ${pricing.vatInfo.note}, ${pricing.vatAmount}, ${pricing.shippingAmount}, ${pricing.shippingVatAmount}, ${pricing.totalWithVat}, ${pricing.depositAmount}, ${pricing.balanceAmount},
           ${promo?.code || null}, ${promo?.label || null}
         )

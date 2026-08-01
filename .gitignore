@@ -27,6 +27,9 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 .env*.local
+# timestamped hand-made backups — these hold live keys and do NOT match the
+# patterns above (`.env.local.bak-1785572975`)
+.env*.bak*
 
 # Vercel
 .vercel

@@ -152,6 +152,11 @@ create table orders (
   economic_balance_claimed_at timestamptz,
   economic_balance_synced_at timestamptz,
   economic_balance_draft_number integer,
+  -- Drafts an edit replaced. They still exist in Dorte's real accounting and
+  -- have to be deleted there by hand, so this list only ever grows — see
+  -- db/migrations/009. DELETE on an order refuses while any draft number is
+  -- still outstanding.
+  economic_superseded_drafts integer[] not null default '{}',
   created_at timestamptz default now()
 );
 

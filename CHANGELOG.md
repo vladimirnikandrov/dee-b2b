@@ -23,6 +23,59 @@ The longstanding tech-debt items previously listed here (monolith split, no TS/t
 
 ---
 
+## 2026-08-01 (evening) — The remaining 26 audit findings
+
+Everything the audit found is now fixed. Grouped by what was actually wrong, because most of these were the same mistake wearing different clothes.
+
+### Read a row, decide, write it back — four separate places, all racing
+
+`cancel`, `restore`, `PATCH /api/orders/:id` and `PUT /api/inventory` all read the order (or the stock row), computed something from it, then wrote unconditionally. Two requests arriving together both read the same "before" state and both applied their effect. Cancelling twice — a double-click, or Vladimir and Dorte at once — refunded the stock twice, and the inventory counter then said DEE had bottles it did not have. Restore deducted twice. An edit applied its quantity delta twice and the second write silently discarded the first edit's lines.
+
+All four now decide *inside* the write:
+
+- **Cancel:** `update orders set cancelled = true where id = ? and cancelled = false returning *`. Only the request that flips the flag refunds the stock; the loser gets a 409. Verified against the live database with five concurrent cancels: one 200, four 409s, stock refunded exactly once.
+- **Restore:** the mirror, `where cancelled = true`. It also had no confirmation modal at all while Cancel and Delete both did — it has one now.
+- **Edit:** the entire computation moved inside `sql.begin` on a `select ... for update` row, so the delta is derived from the quantities that are actually current. The edit window is re-checked there too, since an order can be cancelled or invoiced during the wait for the lock. The checks that moved into the transaction (edit window, empty order, insufficient stock) throw, so the catch now maps them back to 409/400/404 instead of turning every one of them into a 500 that reads as "something went wrong" for a problem the user can fix.
+- **Inventory:** the admin panel used to PUT the whole catalogue as one snapshot taken when the page loaded, rewriting every untouched SKU to its stale figure — an order placed while the panel sat open had its stock silently resurrected. The client now sends `previousStock` per row and each write is conditional on the database still holding that value. Rows that moved come back as a 409 listing them, nothing is saved, and the panel reloads.
+
+### Documents in Dorte's real accounting
+
+A draft in e-conomic is a document in a real ledger. Nothing in this codebase can retract one, so the design principle is: never lose the number.
+
+- **Superseded drafts are kept.** Re-issuing an edited order overwrote `economic_balance_draft_number`, and the previous number — the only way to find that now-wrong document in her books — was gone. New `economic_superseded_drafts integer[]` (migration 009, backfilled) is appended to before the column is reused. The admin panel shows them as a red chip.
+- **Cancelling shows what to delete.** A cancelled order's drafts stay in her accounting. The `EconomicSync` row now takes the cancelled flag and renders an explicit "Delete in e-conomic: #N" instruction, rather than a green tick that says synced.
+- **Delete refuses while drafts are outstanding.** Deleting the order row destroyed the last link between draft #N and the order it belonged to. `DELETE` now returns a 409 naming the drafts; once they are gone from e-conomic, the modal's second step ("I've deleted them") re-sends with `?force=1`. A refusal with no way past it is just a different dead end.
+- **A failed deposit sync can be retried.** The shipping draft is created at order placement; if that call failed, nothing in the app could ever try again and the invoice was simply missing from her books forever. Toggling `deposit_invoiced` now re-fires it, but only when `economic_deposit_synced_at` is null. The claim in `lib/economic.js` is what makes that safe — if the draft did get created, the claim is held and the call is a no-op.
+- **A VAT number alone no longer binds an account to a customer card.** `getOrCreateCustomer` matched on corporate/VAT identifier, so a buyer who typed a competitor's VAT number — by mistake or otherwise — had their orders permanently filed under that competitor in the live ledger. The card's name now has to agree as well (case- and punctuation-insensitively, so "DEE STORE ApS." still matches "Dee Store aps"); on disagreement it declines to bind and logs why.
+
+### Money that could differ from what was agreed
+
+- **Each invoice states only its own VAT.** Both PDFs printed the order's entire VAT total: the shipping invoice demanded 9.25 while declaring 20.60 of VAT, then the full invoice declared the same 20.60 again — 41.20 stated across two documents against 20.60 actually charged. A bookkeeper reconciling either one against DEE's correctly-split e-conomic drafts would find that neither matched. The shipping document now shows the freight net, its own VAT and its own total, and lists a single "Shipping" line rather than the entire product table.
+- **The confirmed total is checked at submit.** `appliedPromo` was a price-table snapshot taken at page load and never revalidated, so a promo edited mid-checkout (or a page left open overnight) invoiced an amount the buyer never saw. The client sends `expectedTotal`; a mismatch over one cent is a 409 telling them what it now comes to. Applying a code also goes through the server now rather than a client-side table lookup.
+- **Promo prices round to cents.** A price like 48.005 propagated independently through every line total, the VAT and the order total, and the printed Subtotal + Shipping + VAT then failed to equal the printed Total by a cent — on a document someone has to reconcile.
+
+### Access control
+
+- **`GET /api/inventory` required nothing** and published exact stock-on-hand for every SKU. The catalogue is behind a login — this is a wholesale portal, not a shop — so there was never a reason for that. It requires a session now.
+- **The order's email address came from the request body.** A buyer could put any address on an order and have the portal deliver the confirmation, the invoice PDF and every later status email to it, from the verified sending domain — the same domain the login codes depend on, so the deliverability damage would have locked real buyers out. It is `session.email` now, in `POST /api/orders` and in `PUT /api/profile`.
+- **OTP verification only ever considered the newest unused code.** Request a code, request another before typing the first, and the first was dead — so an unauthenticated attacker hammering `request-otp` could lock any account, the single admin account included, out permanently while burying its inbox. Any live, unexpired, under-attempt-limit code is now accepted; a miss burns an attempt on all of them. Added an hourly ceiling (`OTP_MAX_PER_HOUR = 8`) on top of the existing 30-second gap, which alone still allowed 120 mails an hour to any address that exists.
+- **Email is matched case-insensitively** (migration 010: a unique index on `lower(email)`, plus normalisation in every route). `Da@maison-dee.com` and `da@maison-dee.com` were two different people — capitalise your address once at registration and not the next time, and you got a second account with an empty order history and no way to reach your real orders. The migration merges any duplicates that already exist (oldest account wins, orders and — if the survivor has none — the delivery profile move across). There are none in production; it is there so the migration is safe on any copy of the database.
+
+### The invoice PDF ran off the page
+
+There was no page-break logic at all: from 19 line items the payment note fell past the bottom edge, and from 21 the IBAN and BIC/SWIFT went with it. The buyer received an invoice with no way to pay from it, and nothing on the document suggested anything was missing. Every block now measures itself and takes a fresh page if it does not fit — line rows one at a time (with the column headings repeated), and the totals block and the payment details each kept whole, since "Subtotal" on one sheet and "Amount Due" on the next is not an invoice. Continuation pages carry the logo and "Order Invoice DA-…-… — continued", and multi-page documents are stamped "Page 2 of 3"; single-page invoices are byte-for-byte unchanged. Seven layout tests pin it at 3, 19, 21, 30 and 60 items and with a wrapping VAT note, and the rendered output was checked page by page.
+
+### Client-side
+
+- **`repeatOrder` overwrote the live buyer profile** with the historical snapshot off the old order, which was then silently persisted on the next checkout — an address change made months ago quietly reverted to the old one.
+- **A new order was shown as the full "Order Invoice"** for the whole order value, because `invoiceViewType` was never reset — the buyer's first sight of their order was a demand for the entire amount rather than the shipping fee actually due.
+- **Status toggles were decided from stale client state.** The value now comes from the server's own read of the row, so "Send Invoice" can no longer silently un-invoice, and the next click can no longer double-email the buyer.
+- **CSV export escaped nothing.** A company name beginning `=`, `+`, `-` or `@` is a formula to Excel, and this export opens on Dorte's machine. Those cells are now prefixed with a tab.
+
+Everything was verified with `npm run typecheck`, 95 unit tests and a production build; the concurrency fixes were additionally verified against the live database with genuinely concurrent requests.
+
+---
+
 ## 2026-08-01 (later) — Promo price list was public; and the guard shipped disabled
 
 A 49-agent adversarial audit (six lenses, every finding then attacked by a skeptic told to refute it) returned 28 confirmed findings and refuted 15. Two were fixed immediately because both were live and cost money.
@@ -33,7 +86,7 @@ Fixed by inverting the model. A promo code is a secret — the point is that you
 
 **The dev-send guard added earlier today shipped switched off.** That same commit set `SITE_URL=https://order.maison-dee.com` in `.env.local.example`, and the README tells every new clone to copy that file. A production host makes `IS_PRODUCTION_PORTAL` true, which skips the recipient check entirely — and because the base URL genuinely is production, the content scan finds nothing to complain about either. So a fresh clone with a seeded database could email real retailers with links that resolve, meaning nobody would notice. That is a worse version of the bug the guard was written for. The example now ships `SITE_URL=http://localhost:3000`, with the production value documented as a comment, and a test reads the tracked example file and fails if its host is ever a production one.
 
-The remaining 26 findings are recorded and not yet acted on — several need a product decision rather than a patch.
+The remaining 26 findings were all fixed the same evening — see the entry above.
 
 ---
 

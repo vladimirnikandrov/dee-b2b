@@ -13,5 +13,7 @@ import m005 from "./005-canonical-country";
 import m006 from "./006-economic-sync-tracking";
 import m007 from "./007-economic-customer-number";
 import m008 from "./008-shipping-vat";
+import m009 from "./009-economic-superseded-drafts";
+import m010 from "./010-case-insensitive-email";
 
-export const MIGRATIONS = [m005, m006, m007, m008];
+export const MIGRATIONS = [m005, m006, m007, m008, m009, m010];

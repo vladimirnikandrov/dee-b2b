@@ -53,7 +53,11 @@ export async function POST(request) {
   for (const size of SIZES) {
     const p = parseFloat(prices?.[size]);
     if (isNaN(p) || p < 0) return NextResponse.json({ error: "All prices must be valid numbers" }, { status: 400 });
-    cleanPrices[size] = p;
+    // Round to cents. A price like 48.005 propagates through every line total,
+    // the VAT and the order total independently, and the printed Subtotal +
+    // Shipping + VAT then fails to equal the printed Total by a cent — on a
+    // document a bookkeeper has to reconcile.
+    cleanPrices[size] = Math.round(p * 100) / 100;
   }
 
   try {

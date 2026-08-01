@@ -18,11 +18,12 @@ export async function POST(request) {
   const session = await requireAdmin();
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const { email, company } = await request.json();
+  const { email: rawEmail, company } = await request.json();
+  const email = String(rawEmail || "").trim().toLowerCase();
   if (!email) return NextResponse.json({ error: "Email is required" }, { status: 400 });
 
   try {
-    const [existing] = await sql`select id, role from users where email = ${email}`;
+    const [existing] = await sql`select id, role from users where lower(email) = ${email}`;
     if (existing) {
       const label = existing.role === "admin" ? "an admin" : "a buyer";
       return NextResponse.json({ error: `This email is already registered as ${label}` }, { status: 400 });
