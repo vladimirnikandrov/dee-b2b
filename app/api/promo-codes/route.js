@@ -1,12 +1,41 @@
 import { NextResponse } from "next/server";
 import { sql } from "@/lib/db";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireAuth } from "@/lib/auth";
 
 const SIZES = ["100 ML", "50 ML", "20 ML", "2 ML", "KIT"];
 
+// ADMIN ONLY. This used to be public, and the client fetched it on mount for
+// anonymous landing-page visitors — so `curl /api/promo-codes` returned every
+// code together with its exact price table, and any buyer could read the
+// deepest discount out of their own Network tab and apply it. On the live data
+// that was 48 EUR against a 75 EUR wholesale price for a 100 ML.
+//
+// A promo code is a secret; the whole point is that you have to be told it.
+// Buyers now validate a code they already know via POST below, which reveals
+// nothing about codes they don't.
 export async function GET() {
+  const session = await requireAdmin();
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
   const rows = await sql`select code, label, discount_type, prices from promo_codes order by created_at`;
   return NextResponse.json({ promoCodes: rows });
+}
+
+// Buyer-facing single-code check. Requires a session so it can't be used as an
+// open oracle, and returns only the code that was actually presented.
+export async function PUT(request) {
+  const session = await requireAuth();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { code } = await request.json();
+  const clean = String(code || "").trim().toUpperCase();
+  if (!clean) return NextResponse.json({ error: "Enter a promo code" }, { status: 400 });
+
+  const [row] = await sql`
+    select code, label, discount_type, prices from promo_codes where upper(code) = ${clean}
+  `;
+  if (!row) return NextResponse.json({ error: "Invalid code" }, { status: 404 });
+  return NextResponse.json({ promo: row });
 }
 
 // Admin create. Errors now propagate to the client instead of being

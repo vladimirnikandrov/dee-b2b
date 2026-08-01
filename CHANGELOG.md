@@ -23,6 +23,20 @@ The longstanding tech-debt items previously listed here (monolith split, no TS/t
 
 ---
 
+## 2026-08-01 (later) — Promo price list was public; and the guard shipped disabled
+
+A 49-agent adversarial audit (six lenses, every finding then attacked by a skeptic told to refute it) returned 28 confirmed findings and refuted 15. Two were fixed immediately because both were live and cost money.
+
+**The whole promo price table was readable by anyone.** `GET /api/promo-codes` had no auth check at all, and the client fetched it on mount for anonymous landing-page visitors — so `curl https://order.maison-dee.com/api/promo-codes` returned every code with its exact prices, and it also sat in every visitor's Network tab. Verified against production: it returned `MOODSCENTBAR` at 48 EUR for a 100 ML against a 75 EUR wholesale price, a 36% discount available to anyone who opened DevTools. Since `POST /api/orders` honours any code that exists, a buyer could simply apply it.
+
+Fixed by inverting the model. A promo code is a secret — the point is that you have to be told it — so the list is now admin-only, and buyers validate a single code they already know via `PUT /api/promo-codes`, which requires a session and reveals nothing about codes they did not present. The client no longer holds a table of codes at all; `loadPromoCodes` moved off the mount effect onto the admin view. Verified live locally: unauthenticated GET now 403, unauthenticated PUT 401, an authenticated buyer's own code returns 200, an unknown code 404.
+
+**The dev-send guard added earlier today shipped switched off.** That same commit set `SITE_URL=https://order.maison-dee.com` in `.env.local.example`, and the README tells every new clone to copy that file. A production host makes `IS_PRODUCTION_PORTAL` true, which skips the recipient check entirely — and because the base URL genuinely is production, the content scan finds nothing to complain about either. So a fresh clone with a seeded database could email real retailers with links that resolve, meaning nobody would notice. That is a worse version of the bug the guard was written for. The example now ships `SITE_URL=http://localhost:3000`, with the production value documented as a comment, and a test reads the tracked example file and fails if its host is ever a production one.
+
+The remaining 26 findings are recorded and not yet acted on — several need a product decision rather than a patch.
+
+---
+
 ## 2026-08-01 — Stop local development from emailing real customers
 
 Between 3 and 26 July, real retailers received real transactional emails whose logo and "View Order" link pointed at `http://localhost:3000`. Eleven of twenty-nine audited sends were affected, across three templates.

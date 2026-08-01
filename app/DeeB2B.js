@@ -164,14 +164,22 @@ export default function DeeB2B() {
       .catch(() => setLoading(false));
   }, []);
 
+  // Inventory is public (stock badges on the catalogue). Promo codes are NOT —
+  // they only load once we know the session is an admin, which the admin-view
+  // effect below handles.
   useEffect(() => {
-    loadPromoCodes();
     loadInventory();
   }, []);
 
+  // Admin-only now: this returns every code WITH its price table, so it must
+  // never be fetched for ordinary visitors. It used to run on mount for
+  // everyone, which put the full discount list in any anonymous visitor's
+  // Network tab. Buyers validate a single code they already know instead —
+  // see applyPromoCode.
   const loadPromoCodes = async () => {
     try {
       const res = await fetch("/api/promo-codes");
+      if (res.status === 401 || res.status === 403) { setPromoCodes([]); return; }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const { promoCodes: data } = await res.json();
       setPromoCodes(data || []);
@@ -350,15 +358,29 @@ export default function DeeB2B() {
     setAppliedPromo(null);
   };
 
-  const applyPromoCode = () => {
+  // Asks the server about ONE code. Deliberately not a lookup in a local list:
+  // holding every code client-side is what leaked the whole discount table.
+  // The server also re-validates at order time, so this is a preview, not the
+  // authority.
+  const applyPromoCode = async () => {
     setPromoError("");
     const code = promoCodeInput.trim().toUpperCase();
     if (!code) { setPromoError("Enter a promo code"); return; }
-    const found = promoCodes.find(p => p.code.toUpperCase() === code);
-    if (!found) { setPromoError("Invalid code"); return; }
-    setAppliedPromo(found);
-    showToast(`✓ ${found.label} pricing applied`);
-    setPromoCodeInput("");
+    try {
+      const res = await fetch("/api/promo-codes", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setPromoError(data.error || "Invalid code"); return; }
+      setAppliedPromo(data.promo);
+      showToast(`✓ ${data.promo.label} pricing applied`);
+      setPromoCodeInput("");
+    } catch (e) {
+      logError("applyPromoCode", e.message || e);
+      setPromoError("Couldn't check that code — try again");
+    }
   };
 
   const handleSubmitOrder = async () => {
@@ -776,6 +798,7 @@ export default function DeeB2B() {
     if (view === "admin") loadAdmins();
     if (view === "admin") loadBuyers();
     if (view === "admin") loadSyncFailures();
+    if (view === "admin") loadPromoCodes();
     if (view === "catalog" && !inventoryDirty) loadInventory();
   }, [view]);
 
