@@ -15,7 +15,7 @@ const BASE = process.env.AUDIT_BASE || "http://localhost:3200";
 const DB = process.env.AUDIT_DB || "dee_april_b2b";
 const MODE = process.argv[2] === "mobile" ? "mobile" : "desktop";
 const VIEWPORT = MODE === "mobile" ? { width: 375, height: 812 } : { width: 1440, height: 900 };
-const OUT = `screenshots/phase1/${MODE}`;
+const OUT = `screenshots/phase2/${MODE}`;
 const BUYER = "audit-buyer@project-1804.com";
 const ADMIN = "audit-admin@project-1804.com";
 
@@ -159,7 +159,7 @@ async function main() {
   await page.waitForTimeout(3000);
   await shot(page, "catalog-first-login");
 
-  await nav(page, "My Orders");
+  await nav(page, "My orders");
   await shot(page, "myorders-empty");
   await nav(page, "Profile");
   await shot(page, "profile-new-account");
@@ -207,7 +207,7 @@ async function main() {
   await page.waitForTimeout(6000);
   await shot(page, "invoice-after-order");
 
-  await nav(page, "My Orders");
+  await nav(page, "My orders");
   await page.waitForTimeout(1500);
   await shot(page, "myorders-with-order");
 
@@ -219,13 +219,13 @@ async function main() {
   await btn(page, "Cancel").first().click().catch(() => {});
   await page.waitForTimeout(500);
 
-  await btn(page, "Repeat Order").first().click().catch(() => note("no Repeat Order button"));
+  await btn(page, "Repeat order").first().click().catch(() => note("no Repeat Order button"));
   await page.waitForTimeout(1500);
   await shot(page, "after-repeat-order");
 
   // Cancel the order last — it is the one action that changes how everything
   // else renders.
-  await nav(page, "My Orders");
+  await nav(page, "My orders");
   await page.waitForTimeout(1200);
   if (await btn(page, "Cancel").first().count()) {
     await btn(page, "Cancel").first().click();
@@ -241,7 +241,7 @@ async function main() {
     await new Promise((r) => setTimeout(r, 5000));
     await route.continue();
   });
-  await nav(page, "My Orders");
+  await nav(page, "My orders");
   await page.waitForTimeout(600);
   await shot(page, "myorders-loading");
   await page.waitForTimeout(5500);
@@ -250,7 +250,7 @@ async function main() {
   await ctx.route("**/api/orders**", (route) => route.abort("failed"));
   await nav(page, "Catalog");
   await page.waitForTimeout(600);
-  await nav(page, "My Orders");
+  await nav(page, "My orders");
   await page.waitForTimeout(2500);
   await shot(page, "myorders-network-error");
   await ctx.unroute("**/api/orders**");
@@ -265,7 +265,7 @@ async function main() {
 
   // ── admin ────────────────────────────────────────────────────────────────
   await page.goto(BASE, { waitUntil: "networkidle" });
-  await btn(page, "Sign Out").click().catch(() => {});
+  await btn(page, "Sign out").click().catch(() => {});
   await page.waitForTimeout(1200);
 
   invite(ADMIN, "Audit Admin");

@@ -23,6 +23,117 @@ The longstanding tech-debt items previously listed here (monolith split, no TS/t
 
 ---
 
+## 2026-08-02 (night) — Wave 2, and the old domain out of the product
+
+### The logo in emails was still the pre-rebrand one
+
+Vladimir received a login code tonight with "DEE APRIL / PARFUMS" at the top. Production was serving the
+correct file — the bytes at `/images/logo-white.png` are identical to the repo's — so this was every mail
+client that had fetched that URL before 2026-07-24 and kept its copy. The file's *contents* changed at the
+rebrand; its *path* did not, and a cache has no way to know. The asset is now `dee-logo-white.png` /
+`dee-logo-black.png`, and `lib/invoice-pdf.js` derives its disk path from `LOGO_WHITE` so a future rename
+can't leave the PDF silently falling back to text.
+
+### order.deeapril.com is out of the product
+
+It still resolves — the registration runs to 2026-12-16 — but nothing points at it any more: not the privacy
+policy, not the EULA, not the README. It also came out of `PRODUCTION_PORTAL_HOSTS`, which inverts what a
+misconfigured `SITE_URL` does: it used to send real emails full of links to a domain that stops existing in
+December, and now it is a blocked send and a loud log line. Pinned by a test.
+
+Migration 013 moves any account still registered on the old domain to `@maison-dee.com` — on production that
+is `contact@deeapril.com`. Sign-in is a code emailed to the address on the account, so one left behind would
+have locked itself out in December, quietly, with nothing to connect it to the cause. Google keeps the old
+address as an alias, so mail to the old form still arrives.
+
+### Accessibility, properly rather than decoratively
+
+- `ConfirmModal` is a real dialog: `role="dialog"`, `aria-modal`, labelled by its own title, focus moved to
+  the dismiss button (not the destructive one — Enter on an unread dialog should not delete an order), Tab
+  cycled inside it, and focus returned to whatever opened it on close.
+- The toast is `role="status" aria-live="polite"`. It is the app's entire confirmation channel — "Order
+  placed", "Inventory saved" — and a screen reader was told none of it.
+- The header logo was a `div` with `onClick`: not focusable, not announced, not reachable by keyboard. It is a
+  button with a label now.
+- `header` / `nav` / `main` landmarks, one `h1` per screen (the catalogue's is visually hidden, since its
+  title is the logo), `aria-current` on the active nav item, and the `|` separators hidden from assistive tech.
+- Every label bound to its input with `htmlFor`/`id`. Profile and Checkout are real `<form>`s, so Enter
+  submits — with the promo-code field explicitly preventing default, or Enter there would have placed the
+  order instead of applying the code.
+
+### The admin panel stopped being one endless page
+
+Orders are collapsed by default into a summary row — status dot, id, company, city, current stage, total,
+date — and expand on click. Three orders used to draw 2 245px of fully-expanded cards; Dorte will have fifty.
+Beyond 25 rows there is a "show more" that says how many are left, and it resets when the filter changes.
+
+The stage filters were wrong, not just verbose: they tested `statuses[key] === true`, and the flags are
+cumulative, so a finished order matched all seven at once and "Shipping invoiced" listed every order in the
+system. They now mean *currently at* that stage, they carry live counts, and the panel opens on **Needs
+action** — the orders with something still to do — instead of on a finished order from April.
+
+The expanded card now shows the ship-to address and contact. It listed what was ordered and never where it
+goes, so packing an order meant opening the invoice in another view.
+
+### One value per role
+
+Tokens live in `app/components/shared.js` (`RADIUS`, `TEXT`, `SPACE`, `INK`) — as plain constants, because
+the app is inline-styled, and because that block is what the Tailwind `@theme` will be when the migration
+lands. Then a mechanical pass over every view:
+
+| | before | after |
+|---|---|---|
+| border radii | 8 values (4/5/6/8/10/12/16/20), with 8, 10 and 12 in a dead heat | **2** — 10 in the flow, 16 for floating surfaces |
+| font sizes | 14 values; the two most common were 9px and 10px | **9**, with 10px reserved for uppercase eyebrows |
+| paddings | `9px 20px`, `6px 14px`, `4px 9px`, `15px 28px` … | snapped to the 4/8/12/16/24 rhythm |
+
+Nothing moved more than 2px: this is a tightening, not a redraw. Button labels went to sentence case, which
+was inconsistent even before the CSS uppercased most of them.
+
+### Found by reviewing Wave 2, before it shipped
+
+Eight agents went at this diff with instructions to refute it. The one that mattered most:
+
+**Taking `order.deeapril.com` out of `PRODUCTION_PORTAL_HOSTS` was a P0, and it went back in.** Sign-in is a
+code emailed to you. If Railway's `SITE_URL` is still the old host, dropping it from that set makes
+`IS_PRODUCTION_PORTAL` false, and then every send is refused for every recipient — no code arrives, the login
+screen still says one was sent, and nothing anywhere says why. That is every buyer and Dorte locked out over a
+config value nobody has read recently, on a domain that works fine today. It cannot be verified from this
+repo, so it is not something to assume: the host stays until someone reads `SITE_URL` in the Railway service,
+and there is now a startup warning that says so if the old host is what is configured. The old domain is gone
+from everything user-facing regardless — legal pages, README, every link and document.
+
+The same finding produced a fix worth having on its own: **a blocked send in production now records a sync
+failure.** The code deliberately swallowed those with a comment calling a production block "impossible unless
+SITE_URL is wrong" — which is exactly the assumption that makes an outage invisible. It goes in the panel
+Dorte already watches.
+
+Four more regressions in the Wave 2 work itself:
+
+- **The dialog focus trap never ran.** `open` flips true one commit before the dialog mounts, so the effect
+  read `dialogRef.current === null` and did nothing at all. Escape is now bound separately (works from the
+  first frame), the trap depends on the mounted flag, and focus return is its own effect keyed off `open`
+  alone — it was tied to `onCancel`, a new closure every parent render, so the cleanup kept yanking focus out
+  of the dialog the user was reading.
+- **Search stopped working for anything finished.** The panel's new default filter is "Needs action", and the
+  search box was ANDed with it — so pasting the number of a delivered order, the single most common admin
+  task, returned "No orders match these filters". A search now searches everything.
+- **Filter counts were computed before the company filter and the search**, so a chip could read "1" over an
+  empty list. And **advancing a status ejected the card being worked on** when a stage filter was active: the
+  open card stays pinned in the list now.
+- **The collapse hid things that must not be hidden** — the "delete this draft in e-conomic by hand" warning
+  and the existence of internal notes both surface on the collapsed row, and the order date (which only lived
+  in a column hidden below 768px) is in the expanded card.
+
+Plus: the destructive dialog button had become a solid fill that read as the primary action; skeleton bars had
+become capsules; the invoice's eyebrow labels had been raised to the same size as their own values, flattening
+the hierarchy; the tokens were exported with no consumers, and now back `base`/`inputStyle`/`labelStyle`.
+
+Lighthouse on the production build after all of it: **performance 100, accessibility 100, best practices 100**,
+with no failing audits in either category.
+
+---
+
 ## 2026-08-02 (evening) — Wave 1: the audit's own findings, fixed
 
 Everything in the first wave of [`PHASE-0-AUDIT.md`](./PHASE-0-AUDIT.md), plus the four decisions Vladimir

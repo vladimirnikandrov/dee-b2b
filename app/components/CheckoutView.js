@@ -68,10 +68,11 @@ export default function CheckoutView({
   return (
     <div style={base}>
       <Header right={<UserNav view={view} setView={setView} session={session} currentUser={currentUser} handleLogout={handleLogout} />} currentUser={currentUser} setView={setView} />
-      <div style={{maxWidth:1060,margin:"0 auto",padding:"0 24px"}}>
-        <div className="da-grid-checkout" style={{display:"grid",gridTemplateColumns:"1.1fr 1fr",gap:48,paddingTop:40,paddingBottom:60}}>
+      <main style={{maxWidth:1060,margin:"0 auto",padding:"0 24px"}}>
+        <form className="da-grid-checkout" onSubmit={(e)=>{e.preventDefault();attemptSubmit();}} style={{display:"grid",gridTemplateColumns:"1.1fr 1fr",gap:48,paddingTop:40,paddingBottom:60}}>
           <FadeIn delay={0.1}><div>
-            <h1 style={{fontSize:13,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:28}}>Buyer details</h1>
+            <h1 className="da-visually-hidden">Checkout</h1>
+            <h2 style={{fontSize:13,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:28}}>Buyer details</h2>
             <div style={{display:"grid",gap:16}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
                 <div {...(err("company") ? { "data-checkout-error": "1" } : {})}>
@@ -127,25 +128,28 @@ export default function CheckoutView({
             {countryUnresolved
               ? <div style={{padding:"12px 16px",background:"#1a1408",borderRadius:10,border:"1px solid #4a3a10",fontSize:12,lineHeight:1.6,marginTop:20,color:"#eab308"}}>Please reselect your country from the list so VAT is calculated correctly.</div>
               : buyer.country && <div style={{padding:"12px 16px",background: "#111",borderRadius:10,border: "1px solid #222",fontSize:12,lineHeight:1.6,marginTop:20}}><span style={{fontWeight:600,color:"#fff"}}>{vatInfo.label}</span><span style={{color:"#9a9a9a",marginLeft:8}}>{vatInfo.note}</span></div>}
-            <div style={{marginTop:28,padding:"20px",background: "#111",borderRadius:12,border: "1px solid #222"}}>
-              <div style={{fontSize:10,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",color: "#8a8a8a",marginBottom:10}}>Promo code</div>
+            <div style={{marginTop:28,padding:"20px",background: "#111",borderRadius:10,border: "1px solid #222"}}>
+              <label htmlFor="co-promo" style={{display:"block",fontSize:10,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",color: "#8a8a8a",marginBottom:10}}>Promo code</label>
               <div style={{display:"flex",gap:8}}>
-                <input className="da-input" style={{...inputStyle,flex:1}} placeholder="Enter code" value={promoCodeInput} onChange={e=>{setPromoCodeInput(e.target.value);if(promoError)setPromoError("");}} onKeyDown={e=>e.key==="Enter"&&applyPromoCode()} />
-                <button className="da-btn" onClick={applyPromoCode} style={{background:"#fff",color:"#000",border:"none",padding:"12px 18px",borderRadius:10,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:FONT,whiteSpace:"nowrap",letterSpacing:"0.06em",textTransform:"uppercase"}}>Apply</button>
+                <input id="co-promo" className="da-input" style={{...inputStyle,flex:1}} placeholder="Enter code" value={promoCodeInput} onChange={e=>{setPromoCodeInput(e.target.value);if(promoError)setPromoError("");}} onKeyDown={e=>{if(e.key!=="Enter")return;
+                  // Now that the checkout is a real <form>, an un-prevented Enter
+                  // here would submit the ORDER instead of applying the code.
+                  e.preventDefault();applyPromoCode();}} />
+                <button type="button" className="da-btn" onClick={applyPromoCode} style={{background:"#fff",color:"#000",border:"none",padding:"12px 18px",borderRadius:10,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:FONT,whiteSpace:"nowrap",letterSpacing:"0.06em",textTransform:"uppercase"}}>Apply</button>
               </div>
               {appliedPromo && (
                 <div style={{marginTop:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,fontSize:12}}>
                   <span style={{color:"#4ade80",fontWeight:500}}>{appliedPromo.label} pricing applied</span>
                   {/* A code the server later refuses has to be removable, or
                       checkout dead-ends on an instruction nobody can follow. */}
-                  <button onClick={clearPromo} style={{background:"none",border:"none",color:"#9a9a9a",fontSize:12,textDecoration:"underline",textUnderlineOffset:3,cursor:"pointer",fontFamily:FONT,padding:0}}>Remove</button>
+                  <button type="button" onClick={clearPromo} style={{background:"none",border:"none",color:"#9a9a9a",fontSize:12,textDecoration:"underline",textUnderlineOffset:3,cursor:"pointer",fontFamily:FONT,padding:0}}>Remove</button>
                 </div>
               )}
               {promoError && <div style={{marginTop:10,fontSize:12,color:"#f87171"}}>{promoError}</div>}
             </div>
           </div></FadeIn>
           <FadeIn delay={0.2}><div>
-            <div className="da-checkout-summary" style={{background: "#000",border: "1px solid #333",borderRadius:16,padding:"28px 24px",position:"sticky",top:100}}>
+            <div className="da-checkout-summary" style={{background: "#000",border: "1px solid #333",borderRadius:16,padding:"24px 24px",position:"sticky",top:100}}>
               <div style={{fontSize:11,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:16,color: "#9a9a9a"}}>Order summary</div>
               <div style={{marginBottom:16}}>{orderLines.map((line,i)=>(<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"10px 0",borderBottom: "1px solid #222",fontSize:12}}><div><div style={{fontWeight:500}}>{line.product}</div><div style={{color: "#9a9a9a",fontSize:11,marginTop:2}}>{SIZE_LABELS[line.size]}</div></div><div style={{textAlign:"right",whiteSpace:"nowrap"}}><div style={{color:"#9a9a9a",fontSize:11}}>{line.qty} × {formatEUR(line.unitPrice)}</div><div style={{fontWeight:600,marginTop:1}}>{formatEUR(line.total)}</div></div></div>))}</div>
               <div style={{paddingTop:12,borderTop: "1px solid #333"}}>
@@ -173,20 +177,20 @@ export default function CheckoutView({
               {submitError && (
                 <div style={{marginTop:16,padding:"12px 14px",background:"#2a0a0a",border:"1px solid #8b4545",borderRadius:10,fontSize:12,color:"#f87171",lineHeight:1.6}}>
                   {submitError}
-                  <button onClick={()=>setSubmitError("")} style={{display:"block",marginTop:8,background:"none",border:"none",color:"#9a9a9a",fontSize:11,textDecoration:"underline",textUnderlineOffset:3,cursor:"pointer",fontFamily:FONT,padding:0}}>Dismiss</button>
+                  <button type="button" onClick={()=>setSubmitError("")} style={{display:"block",marginTop:8,background:"none",border:"none",color:"#9a9a9a",fontSize:11,textDecoration:"underline",textUnderlineOffset:3,cursor:"pointer",fontFamily:FONT,padding:0}}>Dismiss</button>
                 </div>
               )}
               <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:20}}>
-                <button className="da-btn" onClick={attemptSubmit} disabled={submitting} style={{width:"100%",background:submitting?"#333":"#fff",color:submitting?"#8a8a8a":"#000",border:"none",padding:"14px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:submitting?"default":"pointer",fontFamily:FONT}}>{submitting?"Placing order…":"Place order"}</button>
+                <button type="submit" className="da-btn" disabled={submitting} style={{width:"100%",background:submitting?"#333":"#fff",color:submitting?"#8a8a8a":"#000",border:"none",padding:"14px",borderRadius:10,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:submitting?"default":"pointer",fontFamily:FONT}}>{submitting?"Placing order…":"Place order"}</button>
                 {showErrors && missing.length > 0 && orderLines.length > 0 && <div style={{fontSize:12,color:"#eab308",textAlign:"center",lineHeight:1.6}}>Still needed: {missing.map(([, label]) => label).join(" · ")}</div>}
                 {countryUnresolved && orderLines.length > 0 && <div style={{fontSize:12,color:"#eab308",textAlign:"center",lineHeight:1.6}}>Select your country from the list</div>}
                 {orderLines.length === 0 && <div style={{fontSize:12,color:"#eab308",textAlign:"center",lineHeight:1.6}}>Your cart is empty</div>}
-                <button className="da-btn da-btn-outline" onClick={()=>setView("catalog")} style={{width:"100%",background:"transparent",border: "1px solid #222",padding:"12px",borderRadius:12,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color: "#eee",transition:"all 0.25s"}}>Back to catalog</button>
+                <button type="button" className="da-btn da-btn-outline" onClick={()=>setView("catalog")} style={{width:"100%",background:"transparent",border: "1px solid #222",padding:"12px",borderRadius:10,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,color: "#eee",transition:"all 0.25s"}}>Back to catalog</button>
               </div>
             </div>
           </div></FadeIn>
-        </div>
-      </div>
+        </form>
+      </main>
     </div>
   );
 }

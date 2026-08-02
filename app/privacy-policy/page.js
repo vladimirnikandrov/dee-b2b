@@ -4,9 +4,9 @@ export const metadata = { title: "Privacy Policy — DEE B2B" };
 
 export default function PrivacyPolicy() {
   return (
-    <LegalPage title="Privacy Policy" updated="13 July 2026">
+    <LegalPage title="Privacy Policy" updated="2 August 2026">
       <P>
-        This policy covers the DEE B2B wholesale portal (order.deeapril.com, order.maison-dee.com) and its
+        This policy covers the DEE B2B wholesale portal (order.maison-dee.com) and its
         integration with e-conomic ("Dee B2B" app), operated by PROJECT 1804 on behalf of DA Design ApS
         (DEE), Piniehøj 17, 2960 Rungsted Kyst, Denmark.
       </P>

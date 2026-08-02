@@ -29,17 +29,18 @@ export default function CatalogView({
   return (
     <div style={base}>
       <Header right={<UserNav view={view} setView={setView} session={session} currentUser={currentUser} handleLogout={handleLogout} />} currentUser={currentUser} setView={setView} />
-      <FadeIn delay={0.1}><div className="da-pad" style={{margin:"24px 48px 0",padding:"14px 24px",background: "#000",borderRadius:12,fontSize:12,color:"#9a9a9a",display:"flex",justifyContent:"space-between",alignItems:"center",border: "1px solid #222",flexWrap:"wrap",gap:8}}><span>All prices wholesale (WSP) in EUR, excl. VAT · VAT applied at checkout based on your location</span></div></FadeIn>
+      <FadeIn delay={0.1}><div className="da-pad" style={{margin:"24px 48px 0",padding:"16px 24px",background: "#000",borderRadius:10,fontSize:12,color:"#9a9a9a",display:"flex",justifyContent:"space-between",alignItems:"center",border: "1px solid #222",flexWrap:"wrap",gap:8}}><span>All prices wholesale (WSP) in EUR, excl. VAT · VAT applied at checkout based on your location</span></div></FadeIn>
       {/* A failed stock fetch used to render as a perfectly normal catalogue —
           badges simply absent, steppers unbounded — and the buyer found out
           only when the order was rejected. */}
       {inventoryError && (
-        <div className="da-pad" style={{margin:"12px 48px 0",padding:"14px 24px",background:"#1a1408",borderRadius:12,fontSize:12,color:"#eab308",border:"1px solid #4a3a10",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
+        <div className="da-pad" style={{margin:"12px 48px 0",padding:"16px 24px",background:"#1a1408",borderRadius:10,fontSize:12,color:"#eab308",border:"1px solid #4a3a10",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
           <span>Stock levels couldn&apos;t be loaded, so availability isn&apos;t shown. Quantities are re-checked when you place the order.</span>
-          <button className="da-btn" onClick={reloadInventory} style={{background:"transparent",border:"1px solid #6a5518",color:"#eab308",padding:"9px 18px",borderRadius:10,fontSize:10,letterSpacing:"0.08em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>Retry</button>
+          <button className="da-btn" onClick={reloadInventory} style={{background:"transparent",border:"1px solid #6a5518",color:"#eab308",padding:"10px 16px",borderRadius:10,fontSize:10,letterSpacing:"0.08em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>Retry</button>
         </div>
       )}
-      <div className="da-pad" style={{padding:"32px 48px 120px"}}>
+      <main className="da-pad" style={{padding:"32px 48px 120px"}}>
+        <h1 className="da-visually-hidden">Catalogue</h1>
         {PRODUCTS.map((product,pi) => {
           // Stagger caps after the 4th section — below the fold nobody sees
           // the cascade, they just wait through it.
@@ -93,15 +94,15 @@ export default function CatalogView({
           </FadeIn>
         );
         })}
-      </div>
+      </main>
       {totalItems > 0 && (
-        <div className="da-floating-bar" style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#fff",color:"#000",borderRadius:20,padding:"16px 20px 16px 28px",display:"flex",alignItems:"center",gap:24,boxShadow:"0 8px 40px rgba(0,0,0,0.5)",animation:"slideUpCenter 0.4s cubic-bezier(0.23,1,0.32,1)",zIndex:30,maxWidth:520}}>
+        <div className="da-floating-bar" style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#fff",color:"#000",borderRadius:16,padding:"16px 20px 16px 28px",display:"flex",alignItems:"center",gap:24,boxShadow:"0 8px 40px rgba(0,0,0,0.5)",animation:"slideUpCenter 0.4s cubic-bezier(0.23,1,0.32,1)",zIndex:30,maxWidth:520}}>
           <div style={{display:"flex",alignItems:"baseline",gap:10,whiteSpace:"nowrap"}}>
             <span style={{fontSize:12,opacity:0.6}}>{totalItems} item{totalItems!==1?"s":""}</span>
-            <span style={{fontSize:18,fontWeight:600,letterSpacing:"0.02em"}}>{formatEUR(totalWSP)}</span>
+            <span style={{fontSize:17,fontWeight:600,letterSpacing:"0.02em"}}>{formatEUR(totalWSP)}</span>
             <span className="da-excl-vat" style={{fontSize:11,opacity:0.5}}>excl. VAT</span>
           </div>
-          <button className="da-btn" onClick={()=>setView("checkout")} style={{background: "#000",color: "#fff",border:"none",padding:"11px 28px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.14em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,whiteSpace:"nowrap"}}>Proceed</button>
+          <button className="da-btn" onClick={()=>setView("checkout")} style={{background: "#000",color: "#fff",border:"none",padding:"12px 28px",borderRadius:10,fontSize:11,fontWeight:600,letterSpacing:"0.14em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,whiteSpace:"nowrap"}}>Proceed</button>
         </div>
       )}
     </div>

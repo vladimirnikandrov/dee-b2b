@@ -44,8 +44,12 @@ export default function DeeB2B() {
   const [syncFailures, setSyncFailures] = useState([]);
   const [buyerManageForm, setBuyerManageForm] = useState({ email: "", company: "" });
   const [adminExpanded, setAdminExpanded] = useState(null);
+  const [expandedOrder, setExpandedOrder] = useState(null);
+  const [orderLimit, setOrderLimit] = useState(25);
   const [adminCompanyFilter, setAdminCompanyFilter] = useState(null);
-  const [adminStatusFilter, setAdminStatusFilter] = useState("all");
+  // Opens on the orders that still need something done to them, which is what
+  // the panel is for — "All" put a finished order from April at the top.
+  const [adminStatusFilter, setAdminStatusFilter] = useState("todo");
   const [allOrders, setAllOrders] = useState([]);
   const [ordersLoaded, setOrdersLoaded] = useState(false);
   const [ordersLoading, setOrdersLoading] = useState(false);
@@ -167,6 +171,9 @@ export default function DeeB2B() {
   // Otherwise a rejection from ten minutes ago is waiting on the summary the
   // next time the buyer opens the checkout.
   useEffect(() => { if (view !== "checkout") setSubmitError(""); }, [view]);
+  // Otherwise "show more" from a previous filter carries over and the new
+  // list opens 75 rows deep for no reason.
+  useEffect(() => { setOrderLimit(25); }, [adminStatusFilter, adminCompanyFilter, adminSearch]);
 
   // Typed-but-unsaved stock is the one thing in the admin panel that only
   // exists in this tab.
@@ -1069,11 +1076,11 @@ export default function DeeB2B() {
   else if (view === "landing") viewEl = <LandingView setView={setView} />;
 
 
-  else if (view === "login") viewEl = <AuthScreen title="Sign In" fields={[<div key="em"><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>{setAuthForm({...authForm,email:e.target.value});if(authError)setAuthError("");}} placeholder="name@company.com"/></div>,<div key="msg" style={{fontSize:11,color: "#8a8a8a",lineHeight:1.6}}>We&apos;ll email you a 6-digit code — no password needed.</div>]} onSubmit={handleRequestOtp} submitLabel="Send Code" authError={authError} busy={authBusy} onBack={()=>setView("landing")} />;
+  else if (view === "login") viewEl = <AuthScreen title="Sign In" fields={[<div key="em"><label style={labelStyle} htmlFor="auth-email">Email *</label><input id="auth-email" className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>{setAuthForm({...authForm,email:e.target.value});if(authError)setAuthError("");}} placeholder="name@company.com"/></div>,<div key="msg" style={{fontSize:11,color: "#8a8a8a",lineHeight:1.6}}>We&apos;ll email you a 6-digit code — no password needed.</div>]} onSubmit={handleRequestOtp} submitLabel="Send Code" authError={authError} busy={authBusy} onBack={()=>setView("landing")} />;
 
-  else if (view === "otp") viewEl = <AuthScreen title="Enter Your Code" fields={[<div key="msg" style={{fontSize:12,color: "#888",textAlign:"center",lineHeight:1.7,marginBottom:4}}>We sent a 6-digit code to<br/><span style={{color:"#fff",fontWeight:500}}>{otpEmail}</span></div>,<div key="code"><label style={labelStyle}>Code *</label><input className="da-input" style={{...inputStyle,fontSize:22,letterSpacing:"0.3em",textAlign:"center"}} inputMode="numeric" autoFocus autoComplete="one-time-code" maxLength={6} value={otpCode} ref={otpInputRef} onChange={e=>{setOtpCode(e.target.value.replace(/\D/g,"").slice(0,6));if(authError)setAuthError("");}} placeholder="000000"/></div>,<div key="resend" style={{textAlign:"center"}}><button type="button" onClick={handleRequestOtp} disabled={authBusy} style={{background:"none",border:"none",fontSize:11,color: "#8a8a8a",cursor:authBusy?"default":"pointer",opacity:authBusy?0.5:1,fontFamily:"inherit"}}>Resend code</button></div>]} onSubmit={handleVerifyOtp} submitLabel="Verify & Sign In" authError={authError} busy={authBusy} onBack={()=>setView("landing")} />;
+  else if (view === "otp") viewEl = <AuthScreen title="Enter Your Code" fields={[<div key="msg" style={{fontSize:12,color: "#888",textAlign:"center",lineHeight:1.7,marginBottom:4}}>We sent a 6-digit code to<br/><span style={{color:"#fff",fontWeight:500}}>{otpEmail}</span></div>,<div key="code"><label style={labelStyle} htmlFor="auth-code">Code *</label><input id="auth-code" className="da-input" style={{...inputStyle,fontSize:20,letterSpacing:"0.3em",textAlign:"center"}} inputMode="numeric" autoFocus autoComplete="one-time-code" maxLength={6} value={otpCode} ref={otpInputRef} onChange={e=>{setOtpCode(e.target.value.replace(/\D/g,"").slice(0,6));if(authError)setAuthError("");}} placeholder="000000"/></div>,<div key="resend" style={{textAlign:"center"}}><button type="button" onClick={handleRequestOtp} disabled={authBusy} style={{background:"none",border:"none",fontSize:11,color: "#8a8a8a",cursor:authBusy?"default":"pointer",opacity:authBusy?0.5:1,fontFamily:"inherit"}}>Resend code</button></div>]} onSubmit={handleVerifyOtp} submitLabel="Verify & Sign In" authError={authError} busy={authBusy} onBack={()=>setView("landing")} />;
 
-  else if (view === "adminlogin") viewEl = <AuthScreen title="Admin Access" fields={[<div key="em"><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>{setAuthForm({...authForm,email:e.target.value});if(authError)setAuthError("");}} placeholder="name@company.com"/></div>,<div key="msg" style={{fontSize:11,color: "#8a8a8a",lineHeight:1.6}}>We&apos;ll email you a 6-digit code — no password needed.</div>]} onSubmit={handleRequestOtp} submitLabel="Send Code" authError={authError} busy={authBusy} onBack={()=>setView("landing")} />;
+  else if (view === "adminlogin") viewEl = <AuthScreen title="Admin Access" fields={[<div key="em"><label style={labelStyle} htmlFor="auth-email">Email *</label><input id="auth-email" className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>{setAuthForm({...authForm,email:e.target.value});if(authError)setAuthError("");}} placeholder="name@company.com"/></div>,<div key="msg" style={{fontSize:11,color: "#8a8a8a",lineHeight:1.6}}>We&apos;ll email you a 6-digit code — no password needed.</div>]} onSubmit={handleRequestOtp} submitLabel="Send Code" authError={authError} busy={authBusy} onBack={()=>setView("landing")} />;
 
   else if (view === "profile") viewEl = (
     <ProfileView
@@ -1114,7 +1121,7 @@ export default function DeeB2B() {
   else if (view === "admin") viewEl = (
     <AdminView
       setView={setView} currentUser={currentUser} handleLogout={handleLogout}
-      adminExpanded={adminExpanded} setAdminExpanded={setAdminExpanded}
+      adminExpanded={adminExpanded} setAdminExpanded={setAdminExpanded} expandedOrder={expandedOrder} setExpandedOrder={setExpandedOrder} orderLimit={orderLimit} setOrderLimit={setOrderLimit}
       promoCodes={promoCodes} adminPromoForm={adminPromoForm} setAdminPromoForm={setAdminPromoForm} savePromoCode={savePromoCode} deletePromoCode={deletePromoCode}
       inventory={inventory} inventorySaved={inventorySaved} setInventory={setInventory} saveInventory={saveInventory} inventoryLoaded={inventoryLoaded} inventoryDirty={inventoryDirty}
       buyers={buyers} buyerManageForm={buyerManageForm} setBuyerManageForm={setBuyerManageForm} inviteBuyer={inviteBuyer} removeBuyer={removeBuyer} restoreBuyer={restoreBuyer}

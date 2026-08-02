@@ -2,7 +2,7 @@
 
 B2B wholesale ordering portal for **DEE** — a Danish niche perfume brand.
 
-- **Live:** [order.maison-dee.com](https://order.maison-dee.com) / [order.deeapril.com](https://order.deeapril.com) (same app, two domains — the second is being retired, registration expires 2026-12-16)
+- **Live:** [order.maison-dee.com](https://order.maison-dee.com). `order.deeapril.com` still resolves to the same app until its registration expires on 2026-12-16, but it appears nowhere in the product — every link, document and email points at maison-dee.com.
 - **Client:** Dorte — `da@maison-dee.com`
 - **Built by:** [PROJECT 1804](mailto:hello@vladimirnikandrov.com)
 

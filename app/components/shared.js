@@ -2,20 +2,66 @@
 // Shared primitives used across every view: constants, small presentational
 // components, and the page-chrome (Header/UserNav) that closes over live
 // app state via explicit props rather than the parent's closures.
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { LOGO_WHITE, LOGO_BLACK } from "@/lib/assets";
 import { COUNTRIES } from "@/lib/countries";
 
 export const FONT = "'Helvetica Neue', Helvetica, Arial, sans-serif";
-export const base = { fontFamily: FONT, color: "#fff", background: "#000", minHeight: "100vh", margin: 0, padding: 0 };
+
+/* ═══════════════════════════════════════════
+   TOKENS
+
+   DEE's own values, collected in one place. The point isn't the numbers, it's
+   that there is now exactly one of each per role — the portal was carrying
+   eight border radii (4/5/6/8/10/12/16/20, with 8, 10 and 12 in a dead heat)
+   and fourteen font sizes whose two most common were 9 and 10px on black.
+   "Almost the same" is what makes an interface feel unfinished.
+
+   These are plain constants rather than CSS custom properties because the app
+   is inline-styled. When the Tailwind v4 migration lands, this block is the
+   `@theme` — which is the other reason to write it down now.
+   ═══════════════════════════════════════════ */
+
+export const RADIUS = {
+  control: 10,  // buttons, inputs, cards, chips — everything in the flow
+  floating: 16, // dialogs, the invoice sheet, the cart bar: surfaces that sit above
+  pill: 999,    // badges and dots only
+};
+
+export const TEXT = {
+  eyebrow: 10,  // uppercase label above a field or section. The only 10px left.
+  caption: 11,  // secondary line under something, hints, metadata
+  body: 12,     // dense UI: table cells, list rows, summaries
+  bodyLg: 13,   // prose the buyer reads, dialog copy
+  input: 16,    // every text field — below this iOS Safari zooms on focus
+  section: 14,  // heading inside a page
+  page: 17,     // page title
+  amount: 20,   // the one number a screen is about
+};
+
+export const SPACE = { xs: 4, sm: 8, md: 12, base: 16, lg: 24, xl: 32, xxl: 48 };
+
+// Text on #000. Every value here clears 4.5:1 — the portal used #666 (3.66:1)
+// as its label colour and #dc2626 (3.4:1) for errors.
+export const INK = {
+  primary: "#fff",
+  strong: "#eee",
+  body: "#bbb",
+  muted: "#9a9a9a",
+  faint: "#8a8a8a",
+  danger: "#f87171",
+  warn: "#eab308",
+  ok: "#4ade80",
+};
+export const base = { fontFamily: FONT, color: INK.primary, background: "#000", minHeight: "100vh", margin: 0, padding: 0 };
 // `outline: "none"` used to live here, and an inline style beats a stylesheet
 // rule — so the app's own :focus-visible ring never appeared on a single text
 // field. 16px because anything smaller makes iOS Safari zoom the viewport on
 // focus and never zoom back out.
-export const inputStyle = { width: "100%", padding: "12px 16px", border: "1px solid #333", fontSize: 16, fontFamily: FONT, borderRadius: 10, background: "#1a1a1a", color: "#eee", transition: "border-color 0.2s", boxSizing: "border-box" };
+export const inputStyle = { width: "100%", padding: `${SPACE.md}px ${SPACE.base}px`, border: "1px solid #333", fontSize: TEXT.input, fontFamily: FONT, borderRadius: RADIUS.control, background: "#1a1a1a", color: INK.strong, transition: "border-color 0.2s", boxSizing: "border-box" };
 // #666 on #000 is 3.66:1 — under AA, and this is the label on every field in
 // the portal. #8a8a8a is 5.9:1.
-export const labelStyle = { fontSize: 10, textTransform: "uppercase", letterSpacing: "0.12em", color: "#8a8a8a", marginBottom: 6, display: "block" };
+export const labelStyle = { fontSize: TEXT.eyebrow, textTransform: "uppercase", letterSpacing: "0.12em", color: INK.faint, marginBottom: SPACE.xs + 2, display: "block" };
 
 export const ORDER_STATUSES = [
   { key: "deposit_invoiced", label: "Shipping Invoiced" }, { key: "deposit_paid", label: "Shipping Paid" },
@@ -43,6 +89,12 @@ const CSS = `
     91%  { opacity:1; transform:translateX(-50%) translateY(0) scale(1); }
     100% { opacity:0; transform:translateX(-50%) translateY(12px) scale(0.97); }
   }
+  /* A heading the design doesn't want to draw but a screen reader needs to
+     hear — the catalogue's page title is the DEE logo and nothing else. */
+  .da-visually-hidden {
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+    overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
+  }
   .da-btn { transition: all 0.25s cubic-bezier(0.23,1,0.32,1); }
   .da-btn:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(0,0,0,0.45); }
   .da-btn:active { transform:translateY(0); }
@@ -63,7 +115,7 @@ const CSS = `
   .da-status-step:hover { transform:scale(1.05); }
   /* Skeleton, not a spinner: it repeats the real card's shape so the content
      lands without the page jumping. Static under reduced-motion (below). */
-  .da-skeleton { background:#161616; animation: daPulse 1.4s ease-in-out infinite; }
+  .da-skeleton { background:#161616; border-radius:4px; animation: daPulse 1.4s ease-in-out infinite; }
   @keyframes daPulse { 0%,100% { opacity:1; } 50% { opacity:0.45; } }
   .da-order-row { transition:background 0.15s ease; }
   .da-order-row:hover { background: #0a0a0a !important; }
@@ -103,6 +155,16 @@ const CSS = `
     .da-floating-bar { left: 16px !important; right: 16px !important; transform: none !important; max-width: none !important; gap: 12px !important; padding: 14px 16px 14px 20px !important; justify-content: space-between; }
     .da-grid-inv { grid-template-columns: 1fr 1fr !important; }
     .da-grid-promo { grid-template-columns: 1fr 1fr !important; }
+    /* The order summary row drops its two least important columns rather than
+       squeezing five into 375px. */
+    .da-hide-sm { display: none !important; }
+    /* The orders header is title / search / export on one line at desktop; on a
+       phone it stacked into an indented search box with the button stranded
+       under it. Full width, in order. */
+    .da-orders-head { flex-direction: column; align-items: stretch !important; gap: 12px !important; }
+    .da-orders-head input { width: 100% !important; }
+    .da-orders-head .da-btn { width: 100%; }
+    .da-order-row { grid-template-columns: auto 1fr auto !important; }
     /* City / ZIP / Country stayed three-across at 375px, so the country —
        the field that decides the VAT treatment — read "Select c". */
     .da-grid-3 { grid-template-columns: 1fr 1fr !important; }
@@ -139,6 +201,16 @@ export function useStyleInjection() {
 export function Logo({ color = "#fff", style = {} }) {
   const src = color === "#000" ? LOGO_BLACK : LOGO_WHITE;
   return <img src={src} alt="DEE" style={{ height: 28, objectFit: "contain", ...style }} />;
+}
+
+// The header logo goes home when clicked, so it is a button — it used to be a
+// div with onClick: not focusable, not announced, not reachable by keyboard.
+export function LogoButton({ onClick, style = {} }) {
+  return (
+    <button type="button" onClick={onClick} aria-label="DEE — go to the catalogue" style={{background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",lineHeight:0,borderRadius:10}}>
+      <Logo style={style} />
+    </button>
+  );
 }
 
 /* ═══════════════════════════════════════════
@@ -207,7 +279,7 @@ export function CountrySelect({ value, onChange, id, style = {} }) {
         {legacy && <option value={legacy} disabled>{legacy} — not recognized, please reselect</option>}
         {COUNTRIES.map((c) => <option key={c.code} value={c.name}>{c.name}</option>)}
       </select>
-      <span aria-hidden="true" style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "#8a8a8a", fontSize: 8 }}>▼</span>
+      <span aria-hidden="true" style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "#8a8a8a", fontSize:11 }}>▼</span>
     </div>
   );
 }
@@ -228,15 +300,25 @@ function ToastBody({ message, onHide, bottom }) {
     return () => clearTimeout(done);
   }, [total, onHide]);
   return (
-    <div style={{position:"fixed",bottom,left:"50%",transform:"translateX(-50%)",background:"#fff",color:"#000",padding:"14px 28px",borderRadius:14,fontSize:12,fontWeight:500,letterSpacing:"0.04em",lineHeight:1.5,fontFamily:FONT,zIndex:100,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",animation:`toastInOut ${total}ms ease forwards`,pointerEvents:"none",maxWidth:"min(520px, calc(100vw - 40px))",boxSizing:"border-box",textAlign:"center"}}>{message}</div>
+    // role="status" + aria-live: this is the app's entire confirmation
+    // channel ("Order placed", "Inventory saved"), and a screen reader was
+    // told none of it.
+    <div aria-hidden="true" style={{position:"fixed",bottom,left:"50%",transform:"translateX(-50%)",background:"#fff",color:"#000",padding:"12px 28px",borderRadius:10,fontSize:13,fontWeight:500,letterSpacing:"0.04em",lineHeight:1.5,fontFamily:FONT,zIndex:100,boxShadow:"0 8px 32px rgba(0,0,0,0.5)",animation:`toastInOut ${total}ms ease forwards`,pointerEvents:"none",maxWidth:"min(520px, calc(100vw - 40px))",boxSizing:"border-box",textAlign:"center"}}>{message}</div>
   );
 }
 
 export function Toast({ message, visible, onHide, bottom = 28 }) {
-  if (!visible) return null;
-  // Keyed on the message so a back-to-back toast remounts and restarts its
-  // own timer rather than inheriting the previous one's remaining time.
-  return <ToastBody key={message} message={message} onHide={onHide} bottom={bottom} />;
+  // The live region is always in the document, empty, so a screen reader is
+  // already watching it when the text arrives. A region inserted together with
+  // its own content is announced unreliably or not at all.
+  return (
+    <>
+      <div role="status" aria-live="polite" className="da-visually-hidden">{visible ? message : ""}</div>
+      {/* Keyed on the message so a back-to-back toast remounts and restarts its
+          own timer rather than inheriting the previous one's remaining time. */}
+      {visible && <ToastBody key={message} message={message} onHide={onHide} bottom={bottom} />}
+    </>
+  );
 }
 
 /* ═══════════════════════════════════════════
@@ -247,31 +329,99 @@ export function ConfirmModal({ open, title, message, confirmLabel, cancelLabel, 
   // Stay mounted briefly after `open` flips false so the close can animate
   // instead of the dialog vanishing on the same frame.
   const [render, setRender] = useState(open);
+  const dialogRef = useRef(null);
+  const returnFocusTo = useRef(null);
+  const titleId = useId();
+  const messageId = useId();
+
   useEffect(() => {
     if (open) { setRender(true); return; }
     const t = setTimeout(() => setRender(false), 170);
     return () => clearTimeout(t);
   }, [open]);
+
+  // Escape is bound separately from the focus trap so it works from the first
+  // frame, whatever the mount timing. onCancelRef keeps this off the prop's
+  // identity, which changes on every parent render.
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e) => { if (e.key === "Escape") onCancel(); };
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") onCancelRef.current(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onCancel]);
+  }, [open]);
+
+  // A dialog you can tab out of is a dialog in name only: the page behind it
+  // stays reachable, the confirm button can lose focus to something the
+  // overlay is covering, and a keyboard user never gets told anything opened.
+  // `render` is in the deps on purpose: `open` flips true one commit BEFORE the
+  // dialog is mounted (the first effect is what sets `render`), so on the first
+  // open this ran with dialogRef.current === null and the trap silently did
+  // nothing at all.
+  useEffect(() => {
+    if (!open || !render) return;
+    if (!returnFocusTo.current) returnFocusTo.current = document.activeElement;
+    const node = dialogRef.current;
+    if (!node) return;
+    const focusable = () => Array.from(node?.querySelectorAll("button:not([disabled])") || []);
+    // The dismiss button, not the destructive one — Enter on an unread dialog
+    // should not delete an order.
+    focusable()[0]?.focus();
+
+    const onKey = (e) => {
+      if (e.key !== "Tab") return;
+      const items = focusable();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      else if (!node.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, render]);
+
+  // Focus return is its own effect, and deliberately NOT tied to `onCancel`:
+  // that prop is a new closure on every parent render, so the cleanup above
+  // used to re-run constantly and yank focus out of the dialog the user was
+  // still reading. `document.contains` guards the other case — a confirmed
+  // action that changes the view leaves the opener detached, and focusing a
+  // detached node silently sends focus to <body>.
+  useEffect(() => {
+    if (open) return undefined;
+    const target = returnFocusTo.current;
+    returnFocusTo.current = null;
+    if (target instanceof HTMLElement && document.contains(target)) target.focus();
+    return undefined;
+  }, [open]);
 
   if (!render) return null;
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.4)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,backdropFilter:"blur(4px)",animation:open?"fadeIn 0.15s ease":"fadeOut 0.17s ease forwards"}} onClick={onCancel}>
-      <div onClick={e=>e.stopPropagation()} style={{background: "#111",borderRadius:20,padding:"36px 32px 28px",maxWidth:380,width:"90%",border:"1px solid #262626",boxShadow:"0 24px 70px rgba(0,0,0,0.65)",animation:open?"scaleIn 0.2s ease":"scaleOut 0.17s ease forwards"}}>
-        <div style={{fontSize:15,fontWeight:600,marginBottom:8,fontFamily:FONT}}>{title}</div>
-        <div style={{fontSize:13,color: "#888",lineHeight:1.7,marginBottom:28,fontFamily:FONT}}>{message}</div>
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={messageId}
+        onClick={e=>e.stopPropagation()}
+        style={{background: "#111",borderRadius:16,padding:"32px 32px 24px",maxWidth:380,width:"90%",border:"1px solid #262626",boxShadow:"0 24px 70px rgba(0,0,0,0.65)",animation:open?"scaleIn 0.2s ease":"scaleOut 0.17s ease forwards"}}
+      >
+        <h2 id={titleId} style={{fontSize:16,fontWeight:600,marginBottom:8,fontFamily:FONT}}>{title}</h2>
+        <div id={messageId} style={{fontSize:13,color: "#9a9a9a",lineHeight:1.7,marginBottom:28,fontFamily:FONT}}>{message}</div>
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
           {/* Both are disabled once `open` flips false: the dialog stays
               mounted for another 170ms to animate out, and a second click in
               that window fired the action twice — which for the invoice
               statuses meant two emails and two accounting drafts. */}
-          <button onClick={onCancel} disabled={!open} style={{background:"transparent",border: "1px solid #2a2a2a",padding:"10px 20px",borderRadius:10,fontSize:11,letterSpacing:"0.08em",textTransform:"uppercase",cursor:open?"pointer":"default",fontFamily:FONT,color: "#888"}}>{cancelLabel||"Cancel"}</button>
-          <button onClick={onConfirm} disabled={!open} style={{background:danger?"#f87171":"#000",color:"#fff",border:"none",padding:"10px 24px",borderRadius:10,fontSize:11,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",cursor:open?"pointer":"default",fontFamily:FONT}}>{confirmLabel||"Confirm"}</button>
+          <button type="button" onClick={onCancel} disabled={!open} style={{background:"transparent",border: "1px solid #2a2a2a",padding:"10px 20px",borderRadius:10,fontSize:11,letterSpacing:"0.08em",textTransform:"uppercase",cursor:open?"pointer":"default",fontFamily:FONT,color: "#9a9a9a"}}>{cancelLabel||"Cancel"}</button>
+          {/* Destructive is a red-outlined button, the same shape the Cancel and
+              Delete controls use everywhere else — a solid fill next to the
+              dismiss reads as "the one you're meant to press", which on a
+              delete dialog is the opposite of true. */}
+          <button type="button" onClick={onConfirm} disabled={!open} style={{background:danger?"transparent":"#fff",border:danger?"1px solid #f87171":"none",color:danger?"#f87171":"#000",padding:"10px 24px",borderRadius:10,fontSize:11,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",cursor:open?"pointer":"default",fontFamily:FONT}}>{confirmLabel||"Confirm"}</button>
         </div>
       </div>
     </div>
@@ -290,20 +440,20 @@ export function NoteSection({ orderId, notes, noteInputs, setNoteInputs, addNote
     <div style={{marginTop:20}}>
       <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:10}}>
         <span style={{fontSize:10,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8a8a8a"}}>Internal notes</span>
-        <span style={{fontSize:10,color:"#8a8a8a"}}>— only DEE sees these</span>
+        <span style={{fontSize:11,color:"#8a8a8a"}}>— only DEE sees these</span>
       </div>
       {(notes||[]).map((n,i) => (
         <div key={i} style={{padding:"10px 14px",background:"#1a1a1a",borderRadius:10,marginBottom:6,borderLeft:"3px solid #666"}}>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-            <span style={{fontSize:10,fontWeight:600,color: "#eee"}}>{n.author}</span>
-            <span style={{fontSize:10,color: "#8a8a8a"}}>{new Date(n.date).toLocaleDateString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</span>
+            <span style={{fontSize:11,fontWeight:600,color: "#eee"}}>{n.author}</span>
+            <span style={{fontSize:11,color: "#8a8a8a"}}>{new Date(n.date).toLocaleDateString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</span>
           </div>
           <div style={{fontSize:12,color:"#bbb",lineHeight:1.6}}>{n.text}</div>
         </div>
       ))}
       <div style={{display:"flex",gap:8,marginTop:8}}>
         <input className="da-input" style={{...inputStyle,flex:1,padding:"10px 14px",fontSize:16}} placeholder="Add an internal note…" value={noteInputs[orderId]||""} onChange={e=>setNoteInputs(n=>({...n,[orderId]:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&addNote(orderId)} />
-        <button className="da-btn" onClick={()=>addNote(orderId)} style={{background:"#fff",color:"#000",border:"none",padding:"10px 18px",borderRadius:10,fontSize:10,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,whiteSpace:"nowrap"}}>Add</button>
+        <button className="da-btn" onClick={()=>addNote(orderId)} style={{background:"#fff",color:"#000",border:"none",padding:"10px 16px",borderRadius:10,fontSize:10,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,whiteSpace:"nowrap"}}>Add</button>
       </div>
     </div>
   );
@@ -325,7 +475,7 @@ export function AuthScreen({ title, fields, onSubmit, submitLabel, authError, on
       <div style={{width:"100%",maxWidth:380,padding:"0 24px",boxSizing:"border-box"}}>
         <div style={{animation:"scaleIn 0.6s cubic-bezier(0.23,1,0.32,1) 0s both",textAlign:"center",marginBottom:48}}>
           <div style={{display:"flex",justifyContent:"center"}}><Logo style={{ height: 22 }} /></div>
-          <div style={{fontSize:9,letterSpacing:"0.3em",textTransform:"uppercase",color: "#8a8a8a",marginTop:20}}>{title}</div>
+          <div style={{fontSize:11,letterSpacing:"0.3em",textTransform:"uppercase",color: "#8a8a8a",marginTop:20}}>{title}</div>
         </div>
         {authError && <div style={{background:"#2a0a0a",border:"1px solid #8b4545",borderRadius:10,padding:"10px 16px",fontSize:12,color:"#f87171",marginBottom:20,animation:"fadeUp 0.3s ease"}}>{authError}</div>}
         <form onSubmit={(e) => { e.preventDefault(); if (!busy) onSubmit(); }}>
@@ -333,7 +483,7 @@ export function AuthScreen({ title, fields, onSubmit, submitLabel, authError, on
             <div style={{display:"flex",flexDirection:"column",gap:16}}>{fields}</div>
           </FadeIn>
           <FadeIn delay={0.3}>
-            <button type="submit" className="da-btn" disabled={busy} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"16px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:busy?"default":"pointer",opacity:busy?0.55:1,fontFamily:FONT,marginTop:24,transition:"opacity 0.2s"}}>{busy ? "Please wait…" : submitLabel}</button>
+            <button type="submit" className="da-btn" disabled={busy} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"16px",borderRadius:10,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:busy?"default":"pointer",opacity:busy?0.55:1,fontFamily:FONT,marginTop:24,transition:"opacity 0.2s"}}>{busy ? "Please wait…" : submitLabel}</button>
             <div style={{textAlign:"center",marginTop:12}}><button type="button" onClick={onBack} style={{background:"none",border:"none",fontSize:11,color: "#999",cursor:"pointer",fontFamily:FONT}}>← Back</button></div>
           </FadeIn>
         </form>
@@ -348,30 +498,28 @@ export function AuthScreen({ title, fields, onSubmit, submitLabel, authError, on
 
 export function Header({ right, currentUser, setView }) {
   return (
-    <div className="da-header-pad" style={{background: "#000",padding:"20px 48px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom: "1px solid #333",position:"sticky",top:0,zIndex:20,backdropFilter:"blur(12px)",flexWrap:"wrap",gap:12}}>
-      <div style={{cursor:"pointer"}} onClick={() => currentUser ? setView("catalog") : setView("landing")}>
-        <Logo style={{ height: 22 }} />
-      </div>
+    <header className="da-header-pad" style={{background: "#000",padding:"20px 48px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom: "1px solid #333",position:"sticky",top:0,zIndex:20,backdropFilter:"blur(12px)",flexWrap:"wrap",gap:12}}>
+      <LogoButton onClick={() => (currentUser ? setView("catalog") : setView("landing"))} style={{ height: 22 }} />
       {right}
-    </div>
+    </header>
   );
 }
 
 export function UserNav({ view, setView, session, currentUser, handleLogout }) {
   return (
-    <div className="da-nav-full" style={{display:"flex",alignItems:"center",gap:16}}>
-      <button onClick={()=>setView("catalog")} style={{background:"none",border:"none",fontSize:11,color: "#888",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.06em",textDecoration:view==="catalog"?"underline":"none",textUnderlineOffset:3}}>Catalog</button>
-      <span style={{fontSize:10,color: "#999"}}>|</span>
-      <button onClick={()=>setView("myorders")} style={{background:"none",border:"none",fontSize:11,color: "#888",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.06em",textDecoration:view==="myorders"?"underline":"none",textUnderlineOffset:3}}>My Orders</button>
-      <span style={{fontSize:10,color: "#999"}}>|</span>
-      <button onClick={()=>setView("profile")} style={{background:"none",border:"none",fontSize:11,color: "#888",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.06em",textDecoration:view==="profile"?"underline":"none",textUnderlineOffset:3}}>Profile</button>
+    <nav aria-label="Portal" className="da-nav-full" style={{display:"flex",alignItems:"center",gap:16}}>
+      <button onClick={()=>setView("catalog")} style={{background:"none",border:"none",fontSize:11,color: "#888",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.06em",textDecoration:view==="catalog"?"underline":"none",textUnderlineOffset:3}} aria-current={view==="catalog"?"page":undefined}>Catalog</button>
+      <span aria-hidden="true" style={{fontSize:11,color: "#666"}}>|</span>
+      <button onClick={()=>setView("myorders")} style={{background:"none",border:"none",fontSize:11,color: "#888",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.06em",textDecoration:view==="myorders"?"underline":"none",textUnderlineOffset:3}} aria-current={view==="myorders"?"page":undefined}>My orders</button>
+      <span aria-hidden="true" style={{fontSize:11,color: "#666"}}>|</span>
+      <button onClick={()=>setView("profile")} style={{background:"none",border:"none",fontSize:11,color: "#888",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.06em",textDecoration:view==="profile"?"underline":"none",textUnderlineOffset:3}} aria-current={view==="profile"?"page":undefined}>Profile</button>
       {session?.role === "admin" && <>
-        <span style={{fontSize:10,color: "#999"}}>|</span>
-        <button onClick={()=>setView("admin")} style={{background:"none",border:"none",fontSize:11,color: "#888",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.06em"}}>Admin Panel</button>
+        <span aria-hidden="true" style={{fontSize:11,color: "#666"}}>|</span>
+        <button onClick={()=>setView("admin")} style={{background:"none",border:"none",fontSize:11,color: "#888",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.06em"}}>Admin panel</button>
       </>}
-      <span style={{fontSize:10,color: "#999"}}>|</span>
+      <span aria-hidden="true" style={{fontSize:11,color: "#666"}}>|</span>
       <span style={{fontSize:11,color: "#888"}}>{currentUser?.company}</span>
-      <button onClick={handleLogout} style={{background:"none",border: "1px solid #2a2a2a",padding:"6px 14px",borderRadius:8,fontSize:10,color: "#8a8a8a",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Sign Out</button>
-    </div>
+      <button onClick={handleLogout} style={{background:"none",border: "1px solid #2a2a2a",padding:"8px 14px",borderRadius:10,fontSize:11,color: "#9a9a9a",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Sign out</button>
+    </nav>
   );
 }

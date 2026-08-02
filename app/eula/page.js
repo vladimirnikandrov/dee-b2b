@@ -4,10 +4,10 @@ export const metadata = { title: "Terms of Use — DEE B2B" };
 
 export default function Eula() {
   return (
-    <LegalPage title="Terms of Use (EULA)" updated="13 July 2026">
+    <LegalPage title="Terms of Use (EULA)" updated="2 August 2026">
       <P>
-        The "Dee B2B" application and the DEE wholesale portal (order.deeapril.com,
-        order.maison-dee.com) are built and operated by PROJECT 1804 for the sole use of DA Design ApS
+        The "Dee B2B" application and the DEE wholesale portal (order.maison-dee.com)
+        are built and operated by PROJECT 1804 for the sole use of DA Design ApS
         (DEE) and its wholesale customers. This is a private, internal integration — it is not licensed
         or made available to any other company.
       </P>
