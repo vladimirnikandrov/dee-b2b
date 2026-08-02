@@ -4,6 +4,7 @@ import { PRODUCTS, shippingRateFor } from "@/lib/products";
 import { getVatInfo } from "@/lib/vat";
 import { splitShipping } from "@/lib/pricing";
 import { normalizeCountry } from "@/lib/countries";
+import { SELLER } from "@/lib/seller";
 import {
   base, useStyleInjection, ORDER_STATUSES,
   Logo, Toast, ConfirmModal, AuthScreen, labelStyle, inputStyle,
@@ -36,6 +37,7 @@ export default function DeeB2B() {
   const [authError, setAuthError] = useState("");
   const [otpEmail, setOtpEmail] = useState("");
   const [otpCode, setOtpCode] = useState("");
+  const otpInputRef = useRef(null);
   const [admins, setAdmins] = useState([]);
   const [adminManageForm, setAdminManageForm] = useState({ email: "", company: "" });
   const [buyers, setBuyers] = useState([]);
@@ -46,6 +48,8 @@ export default function DeeB2B() {
   const [adminStatusFilter, setAdminStatusFilter] = useState("all");
   const [allOrders, setAllOrders] = useState([]);
   const [ordersLoaded, setOrdersLoaded] = useState(false);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState(false);
   const [adminSearch, setAdminSearch] = useState("");
   const [quantities, setQuantities] = useState({});
   const [view, setView] = useState("landing");
@@ -59,6 +63,8 @@ export default function DeeB2B() {
 
   const [authBusy, setAuthBusy] = useState(false);
   const [appliedPromo, setAppliedPromo] = useState(null);
+  // Order failures stay on the checkout instead of flashing past in a toast.
+  const [submitError, setSubmitError] = useState("");
   // No hardcoded fallback: a phantom promo the server won't honor would let a
   // buyer confirm a discounted total and then be invoiced full price.
   const [promoCodes, setPromoCodes] = useState([]);
@@ -97,16 +103,32 @@ export default function DeeB2B() {
   const [inventory, setInventory] = useState({});
   const [inventorySaved, setInventorySaved] = useState({});
   const [inventoryLoaded, setInventoryLoaded] = useState(false);
+  // Distinguishes "stock hasn't arrived yet" from "stock failed to arrive" —
+  // the catalogue used to render both as a normal page with no badges.
+  const [inventoryError, setInventoryError] = useState(false);
   // Unsaved admin edits shouldn't be silently wiped by a background reload,
   // and the admin should be able to see that they're unsaved.
   const inventoryDirty = JSON.stringify(inventory) !== JSON.stringify(inventorySaved);
+  // loadInventory runs inside async callbacks that closed over an older render.
+  const inventoryDirtyRef = useRef(inventoryDirty);
+  useEffect(() => { inventoryDirtyRef.current = inventoryDirty; }, [inventoryDirty]);
 
   const getQty = (sku) => quantities[sku] || 0;
-  const getStock = (sku) => { const s = inventory[sku]; return (s !== undefined && s !== null) ? s : null; };
+  // null means "not known yet" (still loading, or the fetch failed). A loaded
+  // catalogue with no row for a SKU means zero — that SKU is not stocked, and
+  // POST /api/orders now refuses it for the same reason.
+  const getStock = (sku) => {
+    if (!inventoryLoaded) return null;
+    const s = inventory[sku];
+    return (s !== undefined && s !== null) ? s : 0;
+  };
   const setQty = (sku, val) => {
     const stock = getStock(sku);
-    const clamped = stock !== null ? Math.min(Math.max(0, val), stock) : Math.max(0, val);
-    setQuantities((q) => ({ ...q, [sku]: clamped }));
+    // Never clamp below what is already in the cart: if stock ran out while
+    // the buyer was shopping, the line has to stay visible and reducible
+    // rather than becoming an invisible item that blocks checkout.
+    const ceiling = stock === null ? Infinity : Math.max(stock, quantities[sku] || 0);
+    setQuantities((q) => ({ ...q, [sku]: Math.min(Math.max(0, val), ceiling) }));
   };
 
   const orderLines = [];
@@ -142,12 +164,28 @@ export default function DeeB2B() {
   const totalWithVat = Math.round((totalBeforeShipping + depositAmount) * 100) / 100;
 
   useEffect(() => { viewRef.current = view; }, [view]);
+  // Otherwise a rejection from ten minutes ago is waiting on the summary the
+  // next time the buyer opens the checkout.
+  useEffect(() => { if (view !== "checkout") setSubmitError(""); }, [view]);
+
+  // Typed-but-unsaved stock is the one thing in the admin panel that only
+  // exists in this tab.
+  useEffect(() => {
+    if (!inventoryDirty) return;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [inventoryDirty]);
 
   useEffect(() => {
     // Check URL params for deep linking from emails.
     const params = new URLSearchParams(window.location.search);
     const deepOrder = params.get("order");
     if (deepOrder) pendingDeepOrder.current = deepOrder;
+    // Which of the order's two invoices the email was actually about. Without
+    // this the "View invoice" button on a €410 full invoice opened the €35
+    // shipping invoice, because the view always defaulted to deposit.
+    if (params.get("invoice") === "balance") setInvoiceViewType("balance");
 
     fetch("/api/auth/session")
       .then((r) => r.json())
@@ -191,7 +229,7 @@ export default function DeeB2B() {
   };
 
   // Feature 3: Load and save inventory
-  const loadInventory = async () => {
+  const loadInventory = async (force = false) => {
     try {
       const res = await fetch("/api/inventory");
       // Anonymous visitors on the landing page get a 401 now that stock is
@@ -201,15 +239,23 @@ export default function DeeB2B() {
       const { inventory: rows } = await res.json();
       const inv = {};
       (rows || []).forEach((row) => { inv[row.sku] = row.stock; });
-      setInventory(inv);
+      // Never overwrite unsaved admin edits with a background reload: cancelling
+      // an order, saving an edit or placing an order all call loadInventory(),
+      // and each of those would silently revert numbers the admin had typed —
+      // and, because `inventoryDirty` is derived, disarm the unload guard with
+      // them. `force` is for the two callers that genuinely want the server's
+      // truth: the retry button and the stale-snapshot 409.
+      if (force || !inventoryDirtyRef.current) setInventory(inv);
       setInventorySaved(inv);
       setInventoryLoaded(true);
+      setInventoryError(false);
     } catch (e) {
       logError("loadInventory", e.message || e);
       // Deliberately keep whatever was last loaded rather than wiping to {}:
       // an empty map renders every admin input as 0, and one "Save All" click
       // would then zero the entire live catalogue.
       setInventoryLoaded(false);
+      setInventoryError(true);
     }
   };
 
@@ -221,8 +267,13 @@ export default function DeeB2B() {
       // meant an order placed while the panel sat open was silently undone:
       // every untouched SKU got rewritten to its stale figure on Save All.
       const records = [];
+      let blank = null;
       PRODUCTS.forEach(p => {
         p.variants.forEach(v => {
+          // Blur restores a cleared field, so a null here means focus is still
+          // in it. Skipping it silently while the toast says "saved" is exactly
+          // the lie this whole pass is about — bail instead.
+          if (inventory[v.sku] === null) { blank = `${p.name} ${v.size}`; return; }
           records.push({
             sku: v.sku,
             product_name: p.name,
@@ -232,13 +283,14 @@ export default function DeeB2B() {
           });
         });
       });
+      if (blank) { showToast(`${blank} is empty — type a number (0 to clear the stock)`); return; }
       const res = await fetch("/api/inventory", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ records }) });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         // A stale-snapshot conflict is not an error the admin caused — reload
         // so the screen shows the truth instead of leaving them staring at
         // numbers the server just rejected.
-        if (res.status === 409 && d.conflicts) { showToast(d.error); await loadInventory(); return; }
+        if (res.status === 409 && d.conflicts) { showToast(d.error); await loadInventory(true); return; }
         throw new Error(d.error || `HTTP ${res.status}`);
       }
       setInventorySaved({ ...inventory });
@@ -270,15 +322,24 @@ export default function DeeB2B() {
     }
   };
 
+  // A failed load used to `return` in silence: `allOrders` stayed `[]`,
+  // `ordersLoaded` stayed false, and My Orders rendered "No orders yet. Start
+  // shopping" — telling an active buyer they had never ordered anything, and
+  // inviting them to place the order again.
   const loadOrders = async () => {
+    setOrdersLoading(true);
     try {
       const res = await fetch("/api/orders");
-      if (!res.ok) return;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const { orders } = await res.json();
       setAllOrders(orders || []);
       setOrdersLoaded(true);
+      setOrdersError(false);
     } catch (e) {
       logError("loadOrders", e.message || e);
+      setOrdersError(true);
+    } finally {
+      setOrdersLoading(false);
     }
   };
 
@@ -291,29 +352,6 @@ export default function DeeB2B() {
     } catch (e) {
       logError("saveProfile", e.message || e);
       return false;
-    }
-  };
-
-  // Buyers are passwordless: register/sign-in both end at the same "enter
-  // the code we emailed you" screen.
-  const handleRegister = async () => {
-    if (authBusy) return;
-    setAuthError("");
-    if (!authForm.company || !authForm.email) { setAuthError("Company name and email are required"); return; }
-    setAuthBusy(true);
-    try {
-      const res = await fetch("/api/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: authForm.email, company: authForm.company }) });
-      const data = await res.json();
-      if (!res.ok) { logError("handleRegister", data.error); setAuthError(data.error || "Registration failed"); return; }
-      setBuyer(b => ({...b, company: authForm.company, email: authForm.email}));
-      setOtpEmail(data.email);
-      setView("otp");
-      showToast("Code sent — check your email");
-    } catch (e) {
-      logError("handleRegister", e.message || e);
-      setAuthError("Registration failed");
-    } finally {
-      setAuthBusy(false);
     }
   };
 
@@ -344,7 +382,15 @@ export default function DeeB2B() {
     try {
       const res = await fetch("/api/auth/verify-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: otpEmail, code: otpCode.trim() }) });
       const data = await res.json();
-      if (!res.ok) { setAuthError(data.error || "Verification failed"); return; }
+      if (!res.ok) {
+        // Clear the rejected digits and put the cursor back: under a visible
+        // attempt counter, making them delete six characters by hand is
+        // friction at exactly the wrong moment.
+        setAuthError(data.error || "Verification failed");
+        setOtpCode("");
+        if (otpInputRef.current) otpInputRef.current.focus();
+        return;
+      }
       setSession({ id: data.id, email: data.email, role: data.role });
       setOtpCode(""); setOtpEmail(""); setAuthForm({company:"",email:""});
       const profile = await loadProfile();
@@ -368,6 +414,23 @@ export default function DeeB2B() {
   };
 
   const handleLogout = async () => {
+    // Unsaved stock only exists in this tab; signing out threw it away without
+    // a word.
+    if (inventoryDirty) {
+      askConfirm({
+        title: "Unsaved stock changes",
+        message: "The inventory edits on this page haven't been saved. Signing out discards them.",
+        confirmLabel: "Discard and sign out",
+        cancelLabel: "Go back",
+        danger: true,
+        onConfirm: () => { closeConfirm(); doLogout(); },
+      });
+      return;
+    }
+    return doLogout();
+  };
+
+  const doLogout = async () => {
     // Only persist if a profile was actually loaded into the form — otherwise
     // signing out from a screen that never populated `buyer` would blank the
     // saved profile.
@@ -396,13 +459,16 @@ export default function DeeB2B() {
       const data = await res.json();
       if (!res.ok) { setPromoError(data.error || "Invalid code"); return; }
       setAppliedPromo(data.promo);
-      showToast(`✓ ${data.promo.label} pricing applied`);
+      // No toast: the checkout already confirms this inline, right under the
+      // field, and two identical confirmations for one action read as a bug.
       setPromoCodeInput("");
     } catch (e) {
       logError("applyPromoCode", e.message || e);
       setPromoError("Couldn't check that code — try again");
     }
   };
+
+  const clearPromo = () => { setAppliedPromo(null); setPromoError(""); setPromoCodeInput(""); };
 
   const handleSubmitOrder = async () => {
     if (submitting) return;
@@ -423,12 +489,22 @@ export default function DeeB2B() {
       const data = await res.json();
       if (!res.ok) {
         logError("handleSubmitOrder", data.error);
-        showToast(data.error || "Failed to place order");
-        // A price mismatch means this page is out of date — refresh the things
-        // it prices from so the retry shows the real numbers.
-        if (res.status === 409 && data.priceChanged) { await loadInventory(); setAppliedPromo(null); }
+        // Deliberately NOT a toast. This is the most expensive click in the
+        // app: the message has to stay on screen, be readable, and be
+        // selectable so it can be pasted into an email to Dorte.
+        if (res.status === 409 && data.priceChanged) {
+          // A price mismatch means this page is out of date — refresh the
+          // things it prices from so the retry shows the real numbers, and say
+          // that the promo went with them rather than dropping it silently.
+          await loadInventory();
+          setAppliedPromo(null);
+          setSubmitError(`${data.error || "Prices changed while you were checking out."} The promo code was removed — re-apply it if it still valid.`);
+        } else {
+          setSubmitError(data.error || "The order couldn't be placed. Nothing was charged — try again, or send this to " + SELLER.email + ".");
+        }
         return;
       }
+      setSubmitError("");
 
       await loadOrders();
       await loadInventory();
@@ -447,7 +523,7 @@ export default function DeeB2B() {
       setAppliedPromo(null);
     } catch (e) {
       logError("handleSubmitOrder", e.message || e);
-      showToast("Failed to place order");
+      setSubmitError("The order couldn't be sent — check your connection and try again. Nothing was charged.");
     } finally {
       setSubmitting(false);
     }
@@ -499,17 +575,31 @@ export default function DeeB2B() {
   // to skip the confirmation dialog off stale state: that is how "Send Invoice"
   // silently became "un-invoice", and the next click then emailed the buyer a
   // second copy.
-  const toggleOrderStatus = (orderId, key) => {
+  // What each status actually does to the buyer when it is switched ON. Every
+  // one of them sends a real email the moment it is clicked, and there is no
+  // undo — a mis-aimed click on a 7-chip row told a buyer their order had
+  // shipped. Only the buyer's own "Confirm receipt" skips the prompt, because
+  // there the buyer is the one being told.
+  const STATUS_EFFECT = {
+    deposit_invoiced: { title: "Send the shipping invoice?", body: (o) => `${o} — this emails the buyer the shipping invoice PDF and files a draft in e-conomic.`, label: "Send invoice" },
+    deposit_paid:     { title: "Mark the shipping fee as paid?", body: (o) => `${o} — this emails the buyer a payment confirmation.`, label: "Mark paid" },
+    packed:           { title: "Mark this order as packed?", body: (o) => `${o} — this emails the buyer that the order is packed.`, label: "Mark packed" },
+    balance_invoiced: { title: "Send the full invoice?", body: (o) => `${o} — this emails the buyer the full invoice PDF and files a draft in e-conomic.`, label: "Send invoice" },
+    balance_paid:     { title: "Mark the order as paid in full?", body: (o) => `${o} — this emails the buyer a payment confirmation.`, label: "Mark paid" },
+    shipped:          { title: "Mark this order as shipped?", body: (o) => `${o} — this emails the buyer that the order is on its way.`, label: "Mark shipped" },
+    received:         { title: "Mark this order as received?", body: (o) => `${o} — this closes the order.`, label: "Mark received" },
+  };
+
+  const toggleOrderStatus = (orderId, key, opts = {}) => {
     const order = allOrders.find(o => o.id === orderId);
     const turningOn = order && !order.statuses[key];
-    if (turningOn && (key === "balance_invoiced" || key === "deposit_invoiced")) {
-      const isBalance = key === "balance_invoiced";
+    const effect = STATUS_EFFECT[key];
+    if (turningOn && effect && !opts.skipConfirm) {
       askConfirm({
-        title: isBalance ? "Send Full Invoice" : "Send Shipping Invoice",
-        message: isBalance
-          ? `This emails ${order.buyer?.company || "the buyer"} the full invoice PDF for ${orderId} and creates a draft in e-conomic. Continue?`
-          : `This re-sends the shipping invoice PDF for ${orderId} to the buyer. Continue?`,
-        confirmLabel: "Send Invoice",
+        title: effect.title,
+        message: effect.body(`${orderId} · ${order.buyer?.company || "buyer"}`),
+        confirmLabel: effect.label,
+        cancelLabel: "Not yet",
         onConfirm: async () => { closeConfirm(); await doToggleStatus(orderId, key); },
       });
       return;
@@ -540,6 +630,7 @@ export default function DeeB2B() {
         ? `Only continue if those drafts are already deleted in e-conomic. Deleting order ${orderId} here removes the last record of which drafts belonged to it.`
         : `This will permanently delete order ${orderId}. This cannot be undone.`,
       confirmLabel: "Delete",
+      cancelLabel: "Keep it",
       danger: true,
       onConfirm: async () => {
         try {
@@ -582,11 +673,15 @@ export default function DeeB2B() {
   // reflect the confirmed result into local state.
   const cancelOrder = (orderId, fromAdmin) => {
     askConfirm({
-      title: "Cancel Order",
+      title: "Cancel this order?",
       message: fromAdmin
-        ? `Cancel order ${orderId}? You can restore it later.`
-        : `Cancel order ${orderId}? Contact us if you need to reinstate it.`,
-      confirmLabel: "Cancel Order",
+        ? `Order ${orderId} will be cancelled and its stock returned. You can restore it afterwards.`
+        : `Order ${orderId} will be cancelled and its stock returned. Contact us if you need it reinstated.`,
+      // Both buttons used to begin with the word "Cancel", and the destructive
+      // one was the red fill — so reading only the first word cancelled a real
+      // order.
+      cancelLabel: "Keep order",
+      confirmLabel: "Cancel order",
       danger: true,
       onConfirm: async () => {
         try {
@@ -637,6 +732,22 @@ export default function DeeB2B() {
   };
 
   const repeatOrder = (order) => {
+    // `setQuantities(newQtys)` REPLACES the cart, so a half-built basket would
+    // vanish without a word.
+    if (Object.values(quantities).some((q) => q > 0)) {
+      askConfirm({
+        title: "Replace what's in your cart?",
+        message: `Repeating ${order.id} replaces the items currently in your cart.`,
+        confirmLabel: "Replace cart",
+        cancelLabel: "Keep my cart",
+        onConfirm: () => { closeConfirm(); doRepeatOrder(order); },
+      });
+      return;
+    }
+    doRepeatOrder(order);
+  };
+
+  const doRepeatOrder = (order) => {
     // Clamp to current stock at duplication time — prefilling quantities that
     // are no longer available just guarantees a rejection at submit.
     const newQtys = {};
@@ -828,10 +939,57 @@ export default function DeeB2B() {
       if (!res.ok) { showToast(data.error || "Failed to invite buyer"); return; }
       setBuyerManageForm({ email: "", company: "" });
       await loadBuyers();
-      showToast("Buyer invited — welcome email sent");
+      // The welcome email is the buyer's only route in now, so say which of the
+      // two things actually happened.
+      showToast(data.emailSent
+        ? "Buyer invited — welcome email sent"
+        : "Account created, but the welcome email failed to send — check Sync Failures");
     } catch (e) {
       logError("inviteBuyer", e.message || e);
       showToast("Failed to invite buyer");
+    }
+  };
+
+  // Removing a buyer who has ordered deactivates the account and keeps the
+  // orders; one who never ordered is deleted outright. The dialog says which,
+  // because they are very different things.
+  const removeBuyer = (b) => {
+    const hasOrders = (b.order_count || 0) > 0;
+    askConfirm({
+      title: hasOrders ? "Revoke access?" : "Remove this account?",
+      message: hasOrders
+        ? `${b.email} will no longer be able to sign in, and any open session ends immediately. Their ${b.order_count} order${b.order_count === 1 ? "" : "s"} and invoices stay exactly as they are. You can restore access later.`
+        : `${b.email} has never placed an order, so the account is deleted outright.`,
+      confirmLabel: hasOrders ? "Revoke access" : "Delete account",
+      cancelLabel: "Keep it",
+      danger: true,
+      onConfirm: async () => {
+        closeConfirm();
+        try {
+          const res = await fetch(`/api/admin/buyers/${b.id}`, { method: "DELETE" });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) { showToast(data.error || "Couldn't remove that account"); return; }
+          await loadBuyers();
+          showToast(data.deactivated ? `${b.email} can no longer sign in` : `${b.email} removed`);
+        } catch (e) {
+          logError("removeBuyer", e.message || e);
+          showToast("Couldn't remove that account");
+        }
+      },
+    });
+  };
+
+  // Re-inviting restores access rather than failing on a duplicate.
+  const restoreBuyer = async (b) => {
+    try {
+      const res = await fetch("/api/admin/buyers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: b.email, company: b.company }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { showToast(data.error || "Couldn't restore access"); return; }
+      await loadBuyers();
+      showToast(data.emailSent ? `${b.email} can sign in again — welcome email sent` : `${b.email} can sign in again`);
+    } catch (e) {
+      logError("restoreBuyer", e.message || e);
+      showToast("Couldn't restore access");
     }
   };
 
@@ -910,13 +1068,12 @@ export default function DeeB2B() {
 
   else if (view === "landing") viewEl = <LandingView setView={setView} />;
 
-  else if (view === "register") viewEl = <AuthScreen title="New Account" fields={[<div key="co"><label style={labelStyle}>Company Name *</label><input className="da-input" style={inputStyle} value={authForm.company} onChange={e=>setAuthForm({...authForm,company:e.target.value})} placeholder="Your company"/></div>,<div key="em"><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})} placeholder="name@company.com"/></div>]} onSubmit={handleRegister} submitLabel="Create Account" altText="Already have an account?" altAction={()=>setView("login")} altLabel="Sign In" authError={authError} busy={authBusy} onBack={()=>setView("landing")} />;
 
-  else if (view === "login") viewEl = <AuthScreen title="Sign In" fields={[<div key="em"><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})} placeholder="name@company.com"/></div>,<div key="msg" style={{fontSize:11,color: "#666",lineHeight:1.6}}>We'll email you a 6-digit code — no password needed.</div>]} onSubmit={handleRequestOtp} submitLabel="Send Code" altText="Need an account?" altAction={()=>setView("register")} altLabel="Create one" authError={authError} busy={authBusy} onBack={()=>setView("landing")} />;
+  else if (view === "login") viewEl = <AuthScreen title="Sign In" fields={[<div key="em"><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>{setAuthForm({...authForm,email:e.target.value});if(authError)setAuthError("");}} placeholder="name@company.com"/></div>,<div key="msg" style={{fontSize:11,color: "#8a8a8a",lineHeight:1.6}}>We&apos;ll email you a 6-digit code — no password needed.</div>]} onSubmit={handleRequestOtp} submitLabel="Send Code" authError={authError} busy={authBusy} onBack={()=>setView("landing")} />;
 
-  else if (view === "otp") viewEl = <AuthScreen title="Enter Your Code" fields={[<div key="msg" style={{fontSize:12,color: "#888",textAlign:"center",lineHeight:1.7,marginBottom:4}}>We sent a 6-digit code to<br/><span style={{color:"#fff",fontWeight:500}}>{otpEmail}</span></div>,<div key="code"><label style={labelStyle}>Code *</label><input className="da-input" style={{...inputStyle,fontSize:22,letterSpacing:"0.3em",textAlign:"center"}} inputMode="numeric" autoFocus autoComplete="one-time-code" maxLength={6} value={otpCode} onChange={e=>setOtpCode(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="000000"/></div>,<div key="resend" style={{textAlign:"center"}}><button type="button" onClick={handleRequestOtp} disabled={authBusy} style={{background:"none",border:"none",fontSize:11,color: "#666",cursor:authBusy?"default":"pointer",opacity:authBusy?0.5:1,fontFamily:"inherit"}}>Resend code</button></div>]} onSubmit={handleVerifyOtp} submitLabel="Verify & Sign In" authError={authError} busy={authBusy} onBack={()=>setView("landing")} />;
+  else if (view === "otp") viewEl = <AuthScreen title="Enter Your Code" fields={[<div key="msg" style={{fontSize:12,color: "#888",textAlign:"center",lineHeight:1.7,marginBottom:4}}>We sent a 6-digit code to<br/><span style={{color:"#fff",fontWeight:500}}>{otpEmail}</span></div>,<div key="code"><label style={labelStyle}>Code *</label><input className="da-input" style={{...inputStyle,fontSize:22,letterSpacing:"0.3em",textAlign:"center"}} inputMode="numeric" autoFocus autoComplete="one-time-code" maxLength={6} value={otpCode} ref={otpInputRef} onChange={e=>{setOtpCode(e.target.value.replace(/\D/g,"").slice(0,6));if(authError)setAuthError("");}} placeholder="000000"/></div>,<div key="resend" style={{textAlign:"center"}}><button type="button" onClick={handleRequestOtp} disabled={authBusy} style={{background:"none",border:"none",fontSize:11,color: "#8a8a8a",cursor:authBusy?"default":"pointer",opacity:authBusy?0.5:1,fontFamily:"inherit"}}>Resend code</button></div>]} onSubmit={handleVerifyOtp} submitLabel="Verify & Sign In" authError={authError} busy={authBusy} onBack={()=>setView("landing")} />;
 
-  else if (view === "adminlogin") viewEl = <AuthScreen title="Admin Access" fields={[<div key="em"><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>setAuthForm({...authForm,email:e.target.value})} placeholder="name@company.com"/></div>,<div key="msg" style={{fontSize:11,color: "#666",lineHeight:1.6}}>We'll email you a 6-digit code — no password needed.</div>]} onSubmit={handleRequestOtp} submitLabel="Send Code" authError={authError} busy={authBusy} onBack={()=>setView("landing")} />;
+  else if (view === "adminlogin") viewEl = <AuthScreen title="Admin Access" fields={[<div key="em"><label style={labelStyle}>Email *</label><input className="da-input" style={inputStyle} type="email" value={authForm.email} onChange={e=>{setAuthForm({...authForm,email:e.target.value});if(authError)setAuthError("");}} placeholder="name@company.com"/></div>,<div key="msg" style={{fontSize:11,color: "#8a8a8a",lineHeight:1.6}}>We&apos;ll email you a 6-digit code — no password needed.</div>]} onSubmit={handleRequestOtp} submitLabel="Send Code" authError={authError} busy={authBusy} onBack={()=>setView("landing")} />;
 
   else if (view === "profile") viewEl = (
     <ProfileView
@@ -928,7 +1085,8 @@ export default function DeeB2B() {
   else if (view === "catalog") viewEl = (
     <CatalogView
       session={session} view={view} setView={setView} currentUser={currentUser} handleLogout={handleLogout}
-      inventory={inventory} getQty={getQty} setQty={setQty} getStock={getStock}
+      getQty={getQty} setQty={setQty} getStock={getStock}
+      inventoryLoaded={inventoryLoaded} inventoryError={inventoryError} reloadInventory={loadInventory}
       totalItems={totalItems} totalWSP={totalWSP}
     />
   );
@@ -937,16 +1095,17 @@ export default function DeeB2B() {
     <CheckoutView
       session={session} view={view} setView={setView} currentUser={currentUser} handleLogout={handleLogout}
       buyer={buyer} setBuyer={setBuyer} vatInfo={vatInfo}
-      promoCodeInput={promoCodeInput} setPromoCodeInput={setPromoCodeInput} applyPromoCode={applyPromoCode} appliedPromo={appliedPromo} promoError={promoError}
+      promoCodeInput={promoCodeInput} setPromoCodeInput={setPromoCodeInput} applyPromoCode={applyPromoCode} appliedPromo={appliedPromo} clearPromo={clearPromo} promoError={promoError} setPromoError={setPromoError}
       orderLines={orderLines} totalWSP={totalWSP} vatAmount={vatAmount} shippingAmount={shippingAmount} totalWithVat={totalWithVat} depositInvoiceTotal={depositInvoiceTotal}
-      submitting={submitting} askConfirm={askConfirm} closeConfirm={closeConfirm} confirm={confirm} handleSubmitOrder={handleSubmitOrder}
+      submitting={submitting} submitError={submitError} setSubmitError={setSubmitError} askConfirm={askConfirm} closeConfirm={closeConfirm} confirm={confirm} handleSubmitOrder={handleSubmitOrder}
     />
   );
 
   else if (view === "myorders") viewEl = (
     <MyOrdersView
       session={session} view={view} setView={setView} currentUser={currentUser} handleLogout={handleLogout}
-      allOrders={allOrders} editingOrderId={editingOrderId} setEditingOrderId={setEditingOrderId} editQtys={editQtys} setEditQtys={setEditQtys} getStock={getStock}
+      allOrders={allOrders} ordersLoaded={ordersLoaded} ordersLoading={ordersLoading} ordersError={ordersError} reloadOrders={loadOrders}
+      editingOrderId={editingOrderId} setEditingOrderId={setEditingOrderId} editQtys={editQtys} setEditQtys={setEditQtys} getStock={getStock}
       handleUpdateOrder={handleUpdateOrder} handleViewInvoice={handleViewInvoice} repeatOrder={repeatOrder} toggleOrderStatus={toggleOrderStatus} canClientCancel={canClientCancel} cancelOrder={cancelOrder}
       confirm={confirm} closeConfirm={closeConfirm}
     />
@@ -957,12 +1116,12 @@ export default function DeeB2B() {
       setView={setView} currentUser={currentUser} handleLogout={handleLogout}
       adminExpanded={adminExpanded} setAdminExpanded={setAdminExpanded}
       promoCodes={promoCodes} adminPromoForm={adminPromoForm} setAdminPromoForm={setAdminPromoForm} savePromoCode={savePromoCode} deletePromoCode={deletePromoCode}
-      inventory={inventory} setInventory={setInventory} saveInventory={saveInventory} inventoryLoaded={inventoryLoaded} inventoryDirty={inventoryDirty}
-      buyers={buyers} buyerManageForm={buyerManageForm} setBuyerManageForm={setBuyerManageForm} inviteBuyer={inviteBuyer}
+      inventory={inventory} inventorySaved={inventorySaved} setInventory={setInventory} saveInventory={saveInventory} inventoryLoaded={inventoryLoaded} inventoryDirty={inventoryDirty}
+      buyers={buyers} buyerManageForm={buyerManageForm} setBuyerManageForm={setBuyerManageForm} inviteBuyer={inviteBuyer} removeBuyer={removeBuyer} restoreBuyer={restoreBuyer}
       admins={admins} adminManageForm={adminManageForm} setAdminManageForm={setAdminManageForm} addAdmin={addAdmin} removeAdmin={removeAdmin} session={session}
       syncFailures={syncFailures} resolveSyncFailure={resolveSyncFailure}
       errorLog={errorLog} setErrorLog={setErrorLog} showToast={showToast}
-      allOrders={allOrders} adminCompanyFilter={adminCompanyFilter} setAdminCompanyFilter={setAdminCompanyFilter} adminStatusFilter={adminStatusFilter} setAdminStatusFilter={setAdminStatusFilter} adminSearch={adminSearch} setAdminSearch={setAdminSearch} exportCSV={exportCSV}
+      allOrders={allOrders} ordersError={ordersError} reloadOrders={loadOrders} adminCompanyFilter={adminCompanyFilter} setAdminCompanyFilter={setAdminCompanyFilter} adminStatusFilter={adminStatusFilter} setAdminStatusFilter={setAdminStatusFilter} adminSearch={adminSearch} setAdminSearch={setAdminSearch} exportCSV={exportCSV}
       editingOrderId={editingOrderId} setEditingOrderId={setEditingOrderId} editQtys={editQtys} setEditQtys={setEditQtys} getStock={getStock} handleUpdateOrder={handleUpdateOrder}
       toggleOrderStatus={toggleOrderStatus} handleViewInvoice={handleViewInvoice} cancelOrder={cancelOrder} restoreOrder={restoreOrder} deleteOrder={deleteOrder}
       noteInputs={noteInputs} setNoteInputs={setNoteInputs} addNote={addNote}
@@ -972,7 +1131,7 @@ export default function DeeB2B() {
 
   else if (view === "invoice") viewEl = (
     <InvoiceView
-      viewingOrderId={viewingOrderId} allOrders={allOrders} ordersLoaded={ordersLoaded} buyer={buyer} orderLines={orderLines}
+      viewingOrderId={viewingOrderId} allOrders={allOrders} ordersLoaded={ordersLoaded} ordersError={ordersError} reloadOrders={loadOrders} buyer={buyer} orderLines={orderLines}
       totalWSP={totalWSP} vatInfo={vatInfo} vatAmount={vatAmount} shippingAmount={shippingAmount} totalWithVat={totalWithVat} depositAmount={depositAmount} depositInvoiceTotal={depositInvoiceTotal} totalBeforeShipping={totalBeforeShipping}
       invoiceSource={invoiceSource} invoiceViewType={invoiceViewType} setInvoiceViewType={setInvoiceViewType}
       setView={setView} setViewingOrderId={setViewingOrderId} setInvoiceSource={setInvoiceSource} setQuantities={setQuantities} setAppliedPromo={setAppliedPromo}
@@ -984,6 +1143,11 @@ export default function DeeB2B() {
     <>
       {viewEl}
       <Toast message={toast.message} visible={toast.visible} onHide={hideToast} bottom={view === "catalog" && totalItems > 0 ? 104 : 28} />
+      {/* One dialog for the whole app, mounted next to the one Toast. Views
+          used to render their own, so a confirm raised from a view that didn't
+          have one (Sign Out with unsaved stock, from the catalogue) set the
+          state and rendered nothing — a dead button. */}
+      <ConfirmModal {...confirm} onCancel={closeConfirm} />
     </>
   );
 }

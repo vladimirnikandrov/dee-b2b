@@ -22,7 +22,7 @@ Do this **before** ending the turn, not as a separate follow-up. The whole point
 **Since 2026-07-24, step 5 also deploys** — Railway's `web` service auto-deploys from this repo's `main` branch (see Deployment section below), so `git push origin main` is no longer just a backup step, it's the actual deploy trigger. Don't push anything to `main` that isn't meant to go live immediately.
 
 ## Tech Stack
-- **Frontend**: React 19 (JSX, inline styles — NO Tailwind), Next.js 15 App Router (`"use client"`)
+- **Frontend**: React 19 (JSX, inline styles — NO Tailwind), Next.js 15 App Router (`"use client"`). A Tailwind v4 + TypeScript migration is planned (see `NEXT-SESSION-PROMPT.md`); until it lands, inline styles remain the rule.
 - **Backend**: Railway Postgres (plain SQL via the `postgres` npm package — no ORM, no RLS), Next.js API Routes handle all authorization in code
 - **Auth**: Passwordless. Every account (buyer or admin) signs in via an emailed 6-digit OTP. JWT session in an httpOnly cookie (`jose`). No passwords anywhere in this app.
 - **Email**: Resend. Sender moves to `order@maison-dee.com` — blocked on the Resend plan allowing a second domain (see CHANGELOG backlog); every other address in the code is already on maison-dee.com.
@@ -48,11 +48,10 @@ app/
   dpa/page.js                       — Data processing agreement
   api/
     auth/
-      request-otp/route.js          — Emails a 6-digit code (register + every sign-in)
+      request-otp/route.js          — Emails a 6-digit code (the only way in; 404 if no account)
       verify-otp/route.js           — Checks code, creates session cookie
       session/route.js              — GET current session ({id, email, role} or null)
       logout/route.js               — Clears session cookie
-      register/route.js             — Creates a new buyer account
     admin/
       admins/route.js               — GET list / POST add admin (by email — auto-creates account + Resend welcome email)
       admins/[id]/route.js          — DELETE remove admin (self-removal + last-admin guards)
@@ -62,7 +61,7 @@ app/
       [id]/status/route.js          — PATCH toggle a status flag → sends the matching email, generates/attaches PDF for invoice statuses, syncs balance invoice to e-conomic
       [id]/cancel/route.js          — Buyer/admin cancel — refunds stock
       [id]/restore/route.js         — Admin un-cancel
-      [id]/notes/route.js           — POST a note — author/is_admin derived from session, never trusted from client
+      [id]/notes/route.js           — POST an INTERNAL note (admin only). Notes are never returned to a buyer — GET /api/orders doesn't even query them unless the caller is an admin.
     inventory/route.js               — GET (public) / PUT (admin bulk upsert)
     promo-codes/route.js             — GET (public) / POST, DELETE (admin)
     profile/route.js                 — GET/PUT own buyer_profiles row
@@ -113,15 +112,15 @@ jsconfig.json                       — Enables `@/*` path alias
 - **e-conomic sync never blocks order flow**: `syncInvoiceToEconomic()` wraps everything in try/catch and only logs on failure — a broken e-conomic connection must never prevent a buyer from placing or paying for an order.
 
 ## Auth (current implementation)
-Fully passwordless, buyer and admin identical mechanism:
-1. `POST /api/auth/request-otp` with an email — creates a `login_otps` row, emails a 6-digit code (10 min TTL, 5 max attempts, single-use — enforced in `lib/auth.js`). Auto-creates a `users` row on first request (buyer role) unless already registered as admin.
-2. `POST /api/auth/verify-otp` with the code — validates, signs a JWT (`role` embedded), sets an httpOnly `da_session` cookie (30-day expiry).
+Fully passwordless, buyer and admin identical mechanism. **Invite-only since 2026-08-02** (Vladimir's decision after the Phase 0 audit): there is no public sign-up. `POST /api/auth/register` and the register view are gone — an account exists only because an admin created it in the panel's Buyers section, which sends the welcome email. `request-otp` 404s for an unknown address with a message naming `order@maison-dee.com`. Do not reintroduce self-registration: the catalogue is the full trade price list with RRPs, EANs and stock, and the landing page's primary action used to hand it to anyone with an email address.
+1. `POST /api/auth/request-otp` with an email — looks the account up (case-insensitively), creates a `login_otps` row, emails a 6-digit code (10 min TTL, 5 max attempts, single-use, max 8 per hour — enforced in `lib/auth.js`).
+2. `POST /api/auth/verify-otp` with the code — validates any live code for that address, signs a JWT (`role` embedded), sets an httpOnly `da_session` cookie (30-day expiry).
 3. Every protected route calls `requireAuth()` (any logged-in user) or `requireAdmin()` (`role === "admin"` only) from `lib/auth.js`.
 
 Admins are managed entirely inside the admin panel — "Admins" section, add by email (auto-creates the account + sends a Resend welcome email), remove with guards against self-removal and removing the last admin. Current admins: `hello@project-1804.com` (Vladimir) and `da@maison-dee.com` (Dorte).
 
 ## Order Flow
-1. Buyer registers / signs in via OTP.
+1. An admin invites the buyer (Buyers section → welcome email); the buyer signs in via OTP.
 2. Browses the DEE range at wholesale prices → adds to cart → fills shipping/billing → places order.
 3. `POST /api/orders`: server re-derives all pricing from `{sku, qty}` + buyer country/VAT (`lib/pricing.js` — client-submitted prices are never trusted), atomically decrements stock (`update ... where stock >= qty`, fails cleanly on race), inserts the order row, generates the **shipping invoice PDF**, emails it to the buyer + an alert to admin, and syncs the shipping invoice to e-conomic.
 4. Admin advances statuses from the admin panel (each is a `PATCH /api/orders/:id/status` toggle): `deposit_invoiced` (fires automatically at creation, see above — this key name is historical, it now means "shipping invoiced") → `deposit_paid` → `packed` → `balance_invoiced` (creates the **full order invoice** PDF + email + e-conomic sync — this is the second and final invoice) → `balance_paid` → `shipped` → `received`.
@@ -193,6 +192,8 @@ Live and verified against Dorte's real account (agreement 1797386 / DA DESIGN Ap
 - **NEXT_PUBLIC_ADMIN_PASSWORD is gone** — do not reintroduce a client-side admin check. Admin is a `role` column checked server-side via `requireAdmin()`.
 - **No RLS anywhere** — every new API route needs its own explicit `requireAuth()`/`requireAdmin()` call. There is no safety net.
 - **Never trust client-submitted order/pricing data** — always re-derive from the DB by `orderId` server-side (see `lib/pricing.js`, `generate-invoice/route.js`).
+- **A SKU with no `inventory` row counts as zero, not unlimited.** Both the pre-check and the in-transaction guard in `app/api/orders/route.js` used to skip `stockBySku[sku] === undefined`, so a product added to `lib/products.js` without its inventory row was orderable in any quantity and decremented nothing. Client-side, `getStock()` returns `null` only while stock is unknown (loading or failed); a loaded catalogue with no row is 0.
+- **Order notes are internal to DEE.** Dorte writes them in the admin panel with no indication they travel anywhere, so they don't: buyers can neither read (the API strips them) nor write one.
 - **Fire-and-forget emails/e-conomic sync**: intentional — a Resend or e-conomic failure must never block the order flow. Failures are logged via `console.error`, not surfaced to the buyer. This is a known tradeoff, not an oversight.
 - **Dark-mode contrast traps**: always check text/badge colors against dark backgrounds — common bugs are white-on-white and black-on-black.
 - **`viewRef` pattern**: `useRef(view)` mirrors view state for use inside async callbacks (stale-closure fix), still present in `DeeB2B.js`.

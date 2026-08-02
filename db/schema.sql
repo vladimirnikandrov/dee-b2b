@@ -24,7 +24,11 @@ create table users (
   email text not null unique,
   company text,                        -- convenience only; buyer_profiles.company is the source of truth for display
   role text not null default 'buyer' check (role in ('buyer', 'admin')),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Set to revoke portal access without deleting the account (migration 012).
+  -- Deleting isn't an option for a buyer with orders: those rows are the
+  -- accounting record and carry the e-conomic draft numbers.
+  deactivated_at timestamptz
 );
 
 -- One-time login codes emailed to every account (register + every sign-in).

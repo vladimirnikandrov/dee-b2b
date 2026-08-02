@@ -2,19 +2,30 @@ import { NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 import { issueLoginOtp } from "@/lib/otp";
 import { OTP_MAX_PER_HOUR } from "@/lib/auth";
+import { SELLER } from "@/lib/seller";
 
-// Returning-buyer sign-in: email in, code emailed out. (Registration issues
-// its own first code via /api/auth/register — this route is for every
-// sign-in after that.)
+// The only way into the portal: email in, code emailed out. Accounts are
+// created by an admin in the Buyers section (POST /api/admin/buyers), which
+// sends the welcome email; there is no public sign-up route to reach.
 export async function POST(request) {
   try {
     const { email: rawEmail } = await request.json();
     const email = String(rawEmail || "").trim().toLowerCase();
     if (!email) return NextResponse.json({ error: "Email is required" }, { status: 400 });
 
-    const [user] = await sql`select id from users where lower(email) = ${email}`;
-    if (!user) {
-      return NextResponse.json({ error: "No account found with this email — create one first" }, { status: 404 });
+    const [user] = await sql`select id, deactivated_at from users where lower(email) = ${email}`;
+    // A deactivated account answers exactly like one that never existed —
+    // there is nothing useful in telling someone their access was revoked, and
+    // it keeps the two cases indistinguishable to anyone probing.
+    if (!user || user.deactivated_at) {
+      // Invite-only since 2026-08-02 — there is no self-service sign-up to
+      // point them at, so name who opens accounts instead. Deliberately says
+      // "this email", not "you": the same route answers the admin door, where
+      // wholesale sign-up copy would be nonsense.
+      return NextResponse.json(
+        { error: `No account for this email. Accounts are opened by DEE — write to ${SELLER.email} if you need access.` },
+        { status: 404 }
+      );
     }
 
     // Basic spam guard: don't issue a new code if one was requested in the last 30s.

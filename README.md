@@ -2,7 +2,7 @@
 
 B2B wholesale ordering portal for **DEE** — a Danish niche perfume brand.
 
-- **Live:** [order.deeapril.com](https://order.deeapril.com) / [order.maison-dee.com](https://order.maison-dee.com) (same app, two domains)
+- **Live:** [order.maison-dee.com](https://order.maison-dee.com) / [order.deeapril.com](https://order.deeapril.com) (same app, two domains — the second is being retired, registration expires 2026-12-16)
 - **Client:** Dorte — `da@maison-dee.com`
 - **Built by:** [PROJECT 1804](mailto:hello@vladimirnikandrov.com)
 
@@ -16,7 +16,7 @@ For deep architecture notes, file-by-file responsibilities, and known patterns/g
 | ---------- | --------------------------------------------------------------------- |
 | Frontend   | React 19, Next.js 15 (App Router, `"use client"`), inline styles only |
 | Backend    | Railway Postgres (plain SQL, no ORM), Next.js API Routes (all auth/authorization in code, no RLS) |
-| Auth       | Passwordless — emailed 6-digit OTP for every account (buyer + admin), JWT session cookie |
+| Auth       | Passwordless — emailed 6-digit OTP for every account (buyer + admin), JWT session cookie. **Invite-only**: accounts are created by an admin in the panel, there is no public sign-up |
 | Email      | Resend (`order@maison-dee.com` once the Resend domain swap lands — see CHANGELOG backlog) |
 | PDF        | jsPDF (server-side, dark mode)                                        |
 | Accounting | e-conomic REST API — live sync to the client's real bookkeeping        |
@@ -47,7 +47,7 @@ Set in **Railway → Project → Variables** for production, mirrored locally in
 | `DATABASE_URL`                    | Yes       | Railway auto-injects this when the Postgres addon is linked — don't set manually in production. |
 | `JWT_SECRET`                      | Yes       | Session signing. `openssl rand -hex 32` to generate.                  |
 | `RESEND_API_KEY`                  | Yes       | Without it, OTP emails and all transactional emails fail.             |
-| `RESEND_FROM_EMAIL`               | Yes       | `DEE <order@maison-dee.com>` (still `@deeapril.com` until Resend verifies the new domain) |
+| `RESEND_FROM_EMAIL`               | Yes       | `DEE <order@maison-dee.com>` — verified in Resend since 2026-07-29 |
 | `SITE_URL`                        | No        | Defaults to `https://order.maison-dee.com`. Point at the Railway temp domain for pre-cutover testing. |
 | `ECONOMIC_APP_SECRET_TOKEN`       | No        | e-conomic sync — no-op (silent) if unset. Live and verified when set. |
 | `ECONOMIC_AGREEMENT_GRANT_TOKEN`  | No        | ↑ Obtained via the InstallationURL flow — see `app/api/economic/callback/route.js`. |

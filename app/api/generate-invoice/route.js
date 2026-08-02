@@ -1,4 +1,4 @@
-// DEE APRIL B2B — PDF Invoice Generator (HTTP endpoint)
+// DEE B2B — PDF invoice generator (HTTP endpoint)
 // Only reachable by an authenticated buyer for their OWN order, or an admin
 // for any order. Takes just {orderId, type} and re-fetches the order from
 // the DB itself — never trusts a client-submitted order/buyer payload (the

@@ -21,13 +21,18 @@ export async function GET() {
       ? await sql`select * from orders order by created_at desc`
       : await sql`select * from orders where user_id = ${session.id} order by created_at desc`;
 
+  const isAdmin = session.role === "admin";
   const orderIds = rows.map((r) => r.id);
-  const notes = orderIds.length
+  const notes = isAdmin && orderIds.length
     ? await sql`select * from order_notes where order_id in ${sql(orderIds)} order by created_at asc`
     : [];
-
-  const isAdmin = session.role === "admin";
-  return NextResponse.json({ orders: rows.map((r) => toEnrichedOrder(r, notes, { includeInternal: isAdmin })) });
+  // Notes are DEE's own annotations on an order — Dorte writes them in the
+  // admin panel with no indication they travel anywhere. They were being
+  // serialised into the buyer's response even though no buyer view renders
+  // them, so anyone could read them out of their own Network tab.
+  return NextResponse.json({
+    orders: rows.map((r) => toEnrichedOrder(r, notes, { includeInternal: isAdmin })),
+  });
 }
 
 export async function POST(request) {
@@ -114,11 +119,18 @@ export async function POST(request) {
     // Pre-check stock for a clear error message, then re-check atomically
     // inside the transaction below (belt-and-suspenders against a race
     // between this check and the actual decrement).
+    //
+    // A SKU with NO row in `inventory` counts as zero, not as unlimited. Both
+    // checks here used to skip `stockBySku[sku] === undefined`, so a product
+    // added to lib/products.js without its inventory row was orderable in any
+    // quantity and decremented nothing — the catalogue showed it without a
+    // stock badge and the order sailed through into e-conomic.
     const stockRows = await sql`select sku, stock from inventory where sku in ${sql(pricing.lines.map((l) => l.sku))}`;
     const stockBySku = Object.fromEntries(stockRows.map((r) => [r.sku, r.stock]));
+    const stockFor = (sku) => (stockBySku[sku] === undefined || stockBySku[sku] === null ? 0 : stockBySku[sku]);
     const stockIssues = pricing.lines
-      .filter((l) => stockBySku[l.sku] !== undefined && l.qty > stockBySku[l.sku])
-      .map((l) => `${l.product} ${l.size}: requested ${l.qty}, available ${stockBySku[l.sku]}`);
+      .filter((l) => l.qty > stockFor(l.sku))
+      .map((l) => `${l.product} ${l.size}: requested ${l.qty}, available ${stockFor(l.sku)}`);
     if (stockIssues.length > 0) {
       return NextResponse.json({ error: "Insufficient stock: " + stockIssues[0] }, { status: 409 });
     }
@@ -143,9 +155,10 @@ export async function POST(request) {
           where sku = ${line.sku} and stock >= ${line.qty}
           returning stock
         `;
-        // Row exists in inventory but the atomic decrement failed the stock
-        // check (lost a race with a concurrent order) — abort the whole order.
-        if (!updated && stockBySku[line.sku] !== undefined) {
+        // No row updated means either the row is missing entirely (not a
+        // stocked product) or the atomic decrement lost a race with a
+        // concurrent order. Both abort the order — see the note above.
+        if (!updated) {
           throw new Error(`Insufficient stock for ${line.product} ${line.size} — try again`);
         }
       }

@@ -15,7 +15,7 @@ const BASE = process.env.AUDIT_BASE || "http://localhost:3200";
 const DB = process.env.AUDIT_DB || "dee_april_b2b";
 const MODE = process.argv[2] === "mobile" ? "mobile" : "desktop";
 const VIEWPORT = MODE === "mobile" ? { width: 375, height: 812 } : { width: 1440, height: 900 };
-const OUT = `screenshots/phase0/${MODE}`;
+const OUT = `screenshots/phase1/${MODE}`;
 const BUYER = "audit-buyer@project-1804.com";
 const ADMIN = "audit-admin@project-1804.com";
 
@@ -29,6 +29,11 @@ if (!/^(localhost|127\.0\.0\.1|::1)?$/.test(process.env.PGHOST || "") || !BASE.i
 mkdirSync(OUT, { recursive: true });
 
 const psql = (sql) => execFileSync("psql", ["-d", DB, "-tAc", sql], { encoding: "utf8" }).trim();
+// Mirrors POST /api/admin/buyers — the only way an account exists now.
+const invite = (email, company) => {
+  psql(`insert into users (email, company, role) values ('${email}', '${company}', 'buyer') on conflict (email) do nothing`);
+  psql(`insert into buyer_profiles (user_id, company, email) select id, '${company}', '${email}' from users where email = '${email}' on conflict (user_id) do nothing`);
+};
 const otpFor = (email) =>
   psql(`select code from login_otps where email = '${email}' and used_at is null order by created_at desc limit 1`);
 
@@ -42,11 +47,30 @@ async function shot(page, name) {
   // Long enough for the 0.6s FadeIn plus its longest stagger — the point is to
   // photograph the settled screen, not to pretend it doesn't animate.
   await page.waitForTimeout(900);
-  // The header is position:sticky, and a fullPage capture paints a sticky
-  // element wherever it currently sits — mid-document if the page is scrolled,
-  // which then reads as a layout bug that isn't one.
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.waitForTimeout(250);
+  // Two capture quirks, both of which produce screenshots that look like bugs:
+  //  - lazy images below the fold never decode, so the last product on a long
+  //    page photographs as an empty grey box;
+  //  - the header is position:sticky, and a fullPage capture paints a sticky
+  //    element wherever it currently sits — mid-document if the page is scrolled.
+  await page.evaluate(async () => {
+    // Step down the page rather than jumping: a lazy image that never enters
+    // the viewport never starts loading, and on the 12 000px mobile catalogue
+    // a single jump to the bottom leaves most of them uninitiated — and then
+    // `decode()` on them never settles, which hangs the whole sweep.
+    const step = Math.round(window.innerHeight * 0.8);
+    for (let y = 0; y < document.body.scrollHeight; y += step) {
+      window.scrollTo(0, y);
+      await new Promise((r) => setTimeout(r, 60));
+    }
+    window.scrollTo(0, document.body.scrollHeight);
+    await new Promise((r) => setTimeout(r, 300));
+    await Promise.race([
+      Promise.all(Array.from(document.images).filter((i) => !i.complete).map((i) => i.decode().catch(() => {}))),
+      new Promise((r) => setTimeout(r, 3000)),
+    ]);
+    window.scrollTo(0, 0);
+  });
+  await page.waitForTimeout(400);
   await page.screenshot({ path: file, fullPage: true });
   console.log("  ▸", file);
 }
@@ -60,13 +84,12 @@ const nav = async (page, name) => {
 const field = (page, label) =>
   page.locator(`label:has-text("${label}")`).locator("xpath=following-sibling::input[1]").first();
 
-async function fillBuyer(page, { city, zip, country, vat, email }) {
-  await field(page, "Company Name").fill("Audit Test ApS");
+async function fillBuyer(page, { city, zip, country, vat }) {
+  await field(page, "Company name").fill("Audit Test ApS");
   await field(page, "Address").fill("Testvej 1");
   await field(page, "City").fill(city);
   await field(page, "ZIP").fill(zip);
-  await field(page, "VAT Number").fill(vat);
-  if (email) await field(page, "Email").fill(email);
+  await field(page, "VAT number").fill(vat);
   await page.locator("#checkout-country").selectOption({ label: country });
   await page.waitForTimeout(600);
 }
@@ -94,17 +117,6 @@ async function main() {
   await page.goto(BASE, { waitUntil: "networkidle" });
   await shot(page, "landing");
 
-  await nav(page, "Create Account");
-  await shot(page, "register-empty");
-  await btn(page, "Create Account").click();
-  await shot(page, "register-submitted-empty");
-
-  await field(page, "Company Name").fill("Audit Test ApS");
-  await field(page, "Email").fill("not-an-email");
-  await btn(page, "Create Account").click();
-  await shot(page, "register-bad-email");
-
-  await page.goto(BASE, { waitUntil: "networkidle" });
   await nav(page, "Sign In");
   await shot(page, "login-empty");
   await field(page, "Email").fill("nobody@example.com");
@@ -125,12 +137,14 @@ async function main() {
   await page.goto(`${BASE}/?order=DA-2607-1005`, { waitUntil: "networkidle" });
   await shot(page, "deeplink-signed-out");
 
-  // ── register a fresh buyer, tour the empty states ────────────────────────
+  // ── sign in as a fresh buyer, tour the empty states ──────────────────────
+  // The portal is invite-only, so the account is created the way the admin
+  // panel creates one (INSERT + profile) rather than through a sign-up screen.
+  invite(BUYER, "Audit Test ApS");
   await page.goto(BASE, { waitUntil: "networkidle" });
-  await nav(page, "Create Account");
-  await field(page, "Company Name").fill("Audit Test ApS");
+  await nav(page, "Sign In");
   await field(page, "Email").fill(BUYER);
-  await btn(page, "Create Account").click();
+  await btn(page, "Send Code").click();
   await page.waitForTimeout(2000);
   await shot(page, "otp-sent");
 
@@ -163,7 +177,7 @@ async function main() {
   await page.waitForTimeout(1200);
   await shot(page, "checkout-empty-required");
 
-  await fillBuyer(page, { city: "København", zip: "2200", country: "Denmark", vat: "", email: BUYER });
+  await fillBuyer(page, { city: "København", zip: "2200", country: "Denmark", vat: "" });
   await shot(page, "checkout-dk-vat");
 
   await fillBuyer(page, { city: "Paris", zip: "75001", country: "France", vat: "FR12345678901" });
@@ -185,11 +199,11 @@ async function main() {
   await shot(page, "checkout-promo-applied");
 
   await fillBuyer(page, { city: "København", zip: "2200", country: "Denmark", vat: "" });
-  await btn(page, "Place Order").first().click();
+  await btn(page, "Place order").first().click();
   await page.waitForTimeout(700);
   await shot(page, "checkout-confirm-modal");
 
-  await btn(page, "Place Order").last().click();
+  await btn(page, "Place order").last().click();
   await page.waitForTimeout(6000);
   await shot(page, "invoice-after-order");
 
@@ -217,7 +231,7 @@ async function main() {
     await btn(page, "Cancel").first().click();
     await page.waitForTimeout(700);
     await shot(page, "cancel-confirm-modal");
-    await btn(page, "Cancel Order").last().click().catch(async () => { await page.keyboard.press("Escape"); note("cancel modal: no 'Cancel Order' confirm button"); });
+    await btn(page, "Cancel order").last().click().catch(async () => { await page.keyboard.press("Escape"); note("cancel modal: no 'Cancel Order' confirm button"); });
     await page.waitForTimeout(2500);
     await shot(page, "myorders-cancelled");
   }
@@ -254,13 +268,13 @@ async function main() {
   await btn(page, "Sign Out").click().catch(() => {});
   await page.waitForTimeout(1200);
 
-  await page.goto(BASE, { waitUntil: "networkidle" });
-  await nav(page, "Create Account");
-  await field(page, "Company Name").fill("Audit Admin");
-  await field(page, "Email").fill(ADMIN);
-  await btn(page, "Create Account").click();
-  await page.waitForTimeout(2000);
+  invite(ADMIN, "Audit Admin");
   psql(`update users set role = 'admin' where email = '${ADMIN}'`);
+  await page.goto(BASE, { waitUntil: "networkidle" });
+  await nav(page, "Admin");
+  await field(page, "Email").fill(ADMIN);
+  await btn(page, "Send Code").click();
+  await page.waitForTimeout(2000);
   note(`admin OTP ${otpFor(ADMIN)}`);
   await page.getByPlaceholder("000000").fill(otpFor(ADMIN));
   await btn(page, "Verify & Sign In").click();

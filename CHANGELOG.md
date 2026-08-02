@@ -23,6 +23,161 @@ The longstanding tech-debt items previously listed here (monolith split, no TS/t
 
 ---
 
+## 2026-08-02 (evening) — Wave 1: the audit's own findings, fixed
+
+Everything in the first wave of [`PHASE-0-AUDIT.md`](./PHASE-0-AUDIT.md), plus the four decisions Vladimir
+made on the open questions. No stack changes — that is still a separate workstream.
+
+### The portal is invite-only now
+
+Vladimir's call. The landing page's primary action used to be "Create account"; registration inserted a normal
+buyer, mailed a code, and dropped them straight into the catalogue — every wholesale price, RRP, EAN and stock
+level for the whole range, one email address away, while the admin panel already had a deliberate "invite
+buyer" flow. `POST /api/auth/register` and the register view are deleted; accounts exist only because an admin
+created one in the Buyers section. `request-otp` answers an unknown address with who to write to instead of
+"create one first". The landing page says the same thing under the single Sign In button.
+
+### Order notes are internal
+
+Also Vladimir's call. Dorte writes them in the admin panel with nothing suggesting they travel — and
+`GET /api/orders` was serialising them into the buyer's own response, readable from any devtools Network tab,
+even though no buyer view renders them. The buyer's response no longer queries them at all, posting one is
+`requireAdmin`, and the section is labelled "Internal notes — only DEE sees these".
+
+### Documents
+
+**The on-screen invoice contradicted the PDF of the same invoice.** The 2026-08-01 fix (each document states
+only its own VAT) landed in `lib/invoice-pdf.js` only. `InvoiceView` still printed the whole order's VAT and
+total above a shipping-only amount due — so `DA-2608-1010-SHIP` said €11.35 VAT / €56.75 total on screen and
+€1.85 / €9.25 in the attached PDF. Both documents now derive their own figures from the same split as the PDF,
+and the shipping invoice lists one freight line instead of the entire order.
+
+**The full-invoice email's "View invoice" button opened the shipping invoice** — `?order=` alone, and the view
+always defaults to the shipping document. Both invoice emails now carry `&invoice=deposit|balance`.
+
+`"Incl. 25% moms"` — Danish, in an otherwise English document a foreign bookkeeper has to reconcile — is now
+"Includes 25% Danish VAT".
+
+### A missing inventory row meant unlimited stock
+
+`app/api/orders/route.js` skipped `stockBySku[sku] === undefined` in *both* the pre-check and the
+in-transaction guard, so a SKU with no row was orderable in any quantity and decremented nothing. Production
+was never exposed (DEE 04/05 and DISCOVER ME all have rows at 0, verified against the live API), but adding a
+product to `lib/products.js` and forgetting the inventory row was a live trap. A missing row is now zero on
+both sides, and the catalogue distinguishes "checking stock…" from "out of stock" rather than showing no badge
+at all. DEE 04/05 and DISCOVER ME stay visible and read "Out of stock" (Vladimir: don't hide them).
+
+### Screens that lied when a fetch failed
+
+`loadOrders` did `if (!res.ok) return;` — no error, no log, no state. On a cold load My Orders then rendered
+"No orders yet. Start shopping": an active buyer told, in plain words, that they had never ordered anything,
+and invited to place it again. The two screenshots of "loading" and "failed" were byte-identical. Loading,
+failed-with-retry and genuinely-empty are now three different screens (the skeleton repeats the real card's
+shape), the admin list no longer blames Dorte's filter for a dead backend, and the catalogue says when stock
+couldn't be loaded instead of quietly dropping every badge and unbounding every stepper.
+
+A rejected order used to flash past in a toast that dismissed itself and couldn't be selected — on the most
+expensive click in the app, while the totals silently re-priced and the promo silently dropped. It is now a
+block on the checkout that stays until dismissed, and it says the promo was removed.
+
+### Actions that misled
+
+- **"Edit" was offered on orders the server refuses to edit.** The button allowed everything up to
+  `balance_paid`; `canEdit` refuses a buyer once `deposit_paid` is set. The correct predicate was already in
+  scope — the Cancel button beside it uses it. Now they agree.
+- **The cancel dialog offered "CANCEL" and "CANCEL ORDER" side by side**, the destructive one in red on the
+  right. Dismiss now reads "Keep order"; the delete dialog's reads "Keep it".
+- **Every status pill emailed the buyer the instant it was clicked**, with no confirmation and no undo — a
+  mis-aimed click on a seven-chip row told a buyer their order had shipped. Each toggle now names what the
+  buyer will receive. The buyer's own "Confirm receipt" skips the prompt, since there the buyer is the one
+  telling us.
+- **A cart line whose stock hit zero could never be removed** — the catalogue replaced its stepper with "Out
+  of stock", so the quantity stayed in the cart and blocked checkout for good. The stepper stays while the
+  line is in the cart, capped at what is already there.
+- **Repeat Order silently replaced whatever was in the cart.** It asks now.
+- **Unsaved inventory edits** survive a background reload, warn on unload and on sign-out, and a cleared field
+  no longer commits a 0 the moment focus leaves. The one sentence explaining the greyed-out Save All was
+  unreachable code behind the disabled button; it is now a line under it.
+
+### The primary button was #000 on a #000 page
+
+`SEND CODE` on the sign-in screen — the screen every buyer sees every session, since there are no passwords —
+rendered as bare white text with no button shape at all. Same for `SAVE PDF` on the invoice, `EXPORT CSV` and
+every note `ADD` in the admin panel, while the landing page next door does it correctly with a white pill.
+One fill, applied everywhere the primary role appears.
+
+### Legibility
+
+`#666` was the token for every field label and most captions: 3.66:1 on black, under AA. Now `#8a8a8a` (5.9:1).
+Error red `#dc2626` (3.4:1) → `#f87171`; the two different ambers that meant the same thing → one. `outline:
+"none"` sat in `inputStyle`, and an inline style beats a stylesheet rule, so the app's own `:focus-visible`
+ring never appeared on a single text field — removed, and the ring is white so it reads on black. Inputs are
+16px because anything smaller makes iOS Safari zoom the viewport on focus and never zoom back. Quantity
+steppers and the mobile nav are 44px. On mobile, City/ZIP/Country no longer share a row — the country field,
+which decides the VAT treatment, read "Select c" — and the six-column invoice table becomes labelled blocks
+instead of a silent horizontal scroller with the prices off-screen.
+
+### Weight
+
+The catalogue transferred **13.8 MB** of imagery, **13.2 MB** of it a single 3727×3727 `discover-me.png` shown
+in a ~300 px cell, for a product that is out of stock. Everything is resized to 900 px: **13.8 MB → 0.93 MB**,
+about 5.5 s of image loading on a 20 Mbit line reclaimed. `hero-cover.png` (4.8 MB) was exported from
+`lib/assets.js` and rendered nowhere — deleted. Images are lazy below the first product. `app/icon.svg` gives
+the portal a favicon; `/favicon.ico` had been a 404, and it was the only console error Lighthouse could find.
+
+### Schema
+
+Migration `011-sync-failures-table` brings `sync_failures` under the runner. Production has had the table since
+July (applied by hand) and a database built from `db/schema.sql` gets it, but a clone from an older dump did
+not — and the admin panel's sync-failure fetch 500s without it. Idempotent; a no-op everywhere it already exists.
+
+### Brand
+
+The PDF's logo fallback — reached only when `public/images/logo-white.png` can't be read — still printed
+"DEE APRIL / PARFUMS". A fallback nobody looks at is exactly where an old name survives. `.env.local.example`
+still pointed the sender at `@deeapril.com`. Both fixed. The remaining "April" strings in the tree are
+`db/seed-data.sql` (a historical import, verified absent from production data) and the name of Dorte's own
+e-conomic layout, "DEE APRIL Sort layout engelsk", which is hers and must not change.
+
+### Found by reviewing the above, before it shipped
+
+Ten agents went at this diff with instructions to refute it, and caught five things it had broken or left
+half-done. Recorded because four of them were regressions introduced by the fixes themselves:
+
+- **Sign Out became a dead button on the catalogue and profile.** The new unsaved-stock guard raised a confirm
+  dialog, but each view rendered its own `<ConfirmModal>` and those two didn't have one — so the click set
+  state and drew nothing. There is now a single dialog at the app root next to the single toast, and the three
+  per-view copies are gone.
+- **The "unsaved inventory survives a background reload" fix wasn't implemented** — only the comment claiming
+  it was. `setInventory(inv)` was still unconditional, so cancelling an order or saving an edit reverted
+  whatever Dorte had typed, and disarmed the unload guard with it. Now gated on a ref, with an explicit
+  `force` for the two callers that do want the server's truth.
+- **A cleared stock field was silently dropped while the panel said "Inventory saved".** Fixing "empty commits
+  0" by making empty commit nothing just moved the lie. A cleared field now reverts on blur, and a blank one
+  at save time is refused with the field named — to zero a SKU you type 0.
+- **The invoice deep link hung on "Loading order…" forever** if the orders fetch failed, with no header, no
+  nav and no retry — on the exact screen every invoice email links to. Same three states as everywhere else now.
+- **A failed refresh blanked a list that was already on screen**, including an open edit form. The full-screen
+  error is only for when there is nothing to show; otherwise the list stays with a retry banner above it.
+
+Plus: `#b91c1c` (3.2:1) survived the contrast sweep and was the colour of every destructive control; ten
+inputs overrode the 16px base back to 11px, re-arming the iOS zoom; the first click on Place order revealed
+the field errors but scrolled before React had rendered them; a rejected order stayed on screen after leaving
+and re-entering the checkout; and on a 0%-rated invoice the VAT treatment printed below the total instead of
+where the VAT line goes.
+
+### And one gap the invite-only decision opened
+
+Making the account the access control meant there had to be a way to take it back — there wasn't one. Buyers
+can now be removed: an account with orders is **deactivated** (migration 012 adds `users.deactivated_at`;
+`getSession` and `request-otp` both reject it, so existing 30-day cookies die immediately) because those
+orders are the accounting record and carry e-conomic draft numbers, while an account that never ordered is
+deleted outright. Re-inviting a deactivated address restores it. The invite form also validates the address
+now — it isn't a `<form>`, so `type="email"` was never checked, and a typo produced an account nobody could
+ever sign into with the welcome email going nowhere.
+
+---
+
 ## 2026-08-02 — Phase 0 audit (no product changes)
 
 Groundwork for the polish pass, ahead of the client going into full daily use. Nothing in `app/` or `lib/`

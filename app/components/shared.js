@@ -8,8 +8,14 @@ import { COUNTRIES } from "@/lib/countries";
 
 export const FONT = "'Helvetica Neue', Helvetica, Arial, sans-serif";
 export const base = { fontFamily: FONT, color: "#fff", background: "#000", minHeight: "100vh", margin: 0, padding: 0 };
-export const inputStyle = { width: "100%", padding: "12px 16px", border: "1px solid #333", fontSize: 13, fontFamily: FONT, outline: "none", borderRadius: 10, background: "#1a1a1a", color: "#ccc", transition: "border-color 0.2s", boxSizing: "border-box" };
-export const labelStyle = { fontSize: 10, textTransform: "uppercase", letterSpacing: "0.12em", color: "#666", marginBottom: 6, display: "block" };
+// `outline: "none"` used to live here, and an inline style beats a stylesheet
+// rule — so the app's own :focus-visible ring never appeared on a single text
+// field. 16px because anything smaller makes iOS Safari zoom the viewport on
+// focus and never zoom back out.
+export const inputStyle = { width: "100%", padding: "12px 16px", border: "1px solid #333", fontSize: 16, fontFamily: FONT, borderRadius: 10, background: "#1a1a1a", color: "#eee", transition: "border-color 0.2s", boxSizing: "border-box" };
+// #666 on #000 is 3.66:1 — under AA, and this is the label on every field in
+// the portal. #8a8a8a is 5.9:1.
+export const labelStyle = { fontSize: 10, textTransform: "uppercase", letterSpacing: "0.12em", color: "#8a8a8a", marginBottom: 6, display: "block" };
 
 export const ORDER_STATUSES = [
   { key: "deposit_invoiced", label: "Shipping Invoiced" }, { key: "deposit_paid", label: "Shipping Paid" },
@@ -48,11 +54,17 @@ const CSS = `
      control's dark background. Both have to be set explicitly. */
   .da-select option { background:#1a1a1a; color:#eee; }
   .da-select option:disabled { color:#666; }
-  button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid #8a8a8a; outline-offset: 2px; }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid #fff; outline-offset: 2px; border-radius: 4px;
+  }
   .da-qty-btn:hover { background: #333 !important; }
   .da-qty-btn:active { background: #444 !important; }
   .da-status-step { transition:all 0.2s ease; cursor:pointer; user-select:none; }
   .da-status-step:hover { transform:scale(1.05); }
+  /* Skeleton, not a spinner: it repeats the real card's shape so the content
+     lands without the page jumping. Static under reduced-motion (below). */
+  .da-skeleton { background:#161616; animation: daPulse 1.4s ease-in-out infinite; }
+  @keyframes daPulse { 0%,100% { opacity:1; } 50% { opacity:0.45; } }
   .da-order-row { transition:background 0.15s ease; }
   .da-order-row:hover { background: #0a0a0a !important; }
   input[type=number]::-webkit-inner-spin-button,
@@ -78,7 +90,9 @@ const CSS = `
     .da-grid-checkout { grid-template-columns: 1fr !important; }
     .da-grid-admin-row { grid-template-columns: 1fr !important; gap: 8px !important; }
     .da-header-pad { padding-left: 16px !important; padding-right: 16px !important; }
-    .da-nav-full { flex-wrap: wrap; gap: 8px !important; }
+    .da-nav-full { flex-wrap: wrap; gap: 4px 10px !important; }
+    /* 44px is the smallest control a thumb hits reliably; these were 12px tall. */
+    .da-nav-full button { min-height: 44px; }
     .da-invoice-pad { padding: 28px 20px !important; }
     .da-invoice-grid { grid-template-columns: 1fr !important; }
     .da-invoice-meta { grid-template-columns: 1fr 1fr !important; }
@@ -89,6 +103,18 @@ const CSS = `
     .da-floating-bar { left: 16px !important; right: 16px !important; transform: none !important; max-width: none !important; gap: 12px !important; padding: 14px 16px 14px 20px !important; justify-content: space-between; }
     .da-grid-inv { grid-template-columns: 1fr 1fr !important; }
     .da-grid-promo { grid-template-columns: 1fr 1fr !important; }
+    /* City / ZIP / Country stayed three-across at 375px, so the country —
+       the field that decides the VAT treatment — read "Select c". */
+    .da-grid-3 { grid-template-columns: 1fr 1fr !important; }
+    .da-grid-3 > :last-child { grid-column: 1 / -1; }
+    /* A six-column invoice table on a phone is a horizontal scroller with the
+       money off-screen. Each line becomes a labelled block instead. */
+    .da-invoice-lines table, .da-invoice-lines tbody, .da-invoice-lines tr, .da-invoice-lines td { display: block; width: 100%; min-width: 0 !important; }
+    .da-invoice-lines thead { display: none; }
+    .da-invoice-lines tr { padding: 10px 0; }
+    .da-invoice-lines td { display: flex; justify-content: space-between; gap: 16px; text-align: right !important; padding: 3px 0 !important; }
+    .da-invoice-lines td::before { content: attr(data-label); color: #8a8a8a; text-align: left; }
+    .da-invoice-lines td:empty { display: none; }
   }
   @media (max-width: 480px) {
     .da-grid-4 { grid-template-columns: 1fr !important; }
@@ -128,11 +154,22 @@ export function BottleSVG({ size, uniqueId }) {
   return (<svg viewBox="0 0 100 200" style={{width:"100%",height:"100%",maxHeight:160}}><defs><linearGradient id={gid("b")} x1="0" y1="0" x2="1" y2="0.15"><stop offset="0%" stopColor="#333"/><stop offset="30%" stopColor="#1a1a1a"/><stop offset="70%" stopColor="#0f0f0f"/><stop offset="100%" stopColor="#181818"/></linearGradient><filter id={gid("s")} x="-20%" y="-10%" width="140%" height="130%"><feDropShadow dx="3" dy="5" stdDeviation="5" floodOpacity="0.18"/></filter></defs><g filter={`url(#${gid("s")})`}><rect x="32" y={y-18} width="36" height="18" rx="4" fill="#1a1a1a"/><rect x="39" y={y-30} width="22" height="14" rx="5" fill="#252525"/><rect x="24" y={y} width="52" height={h} rx="6" fill={`url(#${gid("b")})`}/><rect x="28" y={y+4} width="14" height={h-18} rx="4" fill="rgba(255,255,255,0.05)"/></g></svg>);
 }
 
-export function QtyInput({ value, onChange, max }) {
+// `label` names the product this stepper belongs to, so the three controls
+// aren't announced as "minus / spinbutton / plus" twenty-one times over.
+// 44px tall because that is the smallest thing a thumb reliably hits, and the
+// input is 16px because anything smaller makes iOS Safari zoom the page on
+// focus and never zoom back.
+export function QtyInput({ value, onChange, max, label = "item" }) {
   const atMax = max !== undefined && max !== null && value >= max;
-  const s = {width:32,height:32,border:"none",background:"transparent",cursor:"pointer",fontSize:14,color:"#aaa",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:FONT,padding:0};
+  const s = {width:44,height:44,border:"none",background:"transparent",cursor:"pointer",fontSize:16,color:"#bbb",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:FONT,padding:0};
   const clamp = (v) => { let n = Math.max(0, v); if (max !== undefined && max !== null) n = Math.min(n, max); return n; };
-  return (<div style={{display:"inline-flex",alignItems:"center",borderRadius:8,border:`1px solid ${atMax?"#eab308":"#444"}`,overflow:"hidden",background: "#000"}}><button className="da-qty-btn" onClick={()=>onChange(Math.max(0,value-1))} style={s}>−</button><input type="number" min="0" max={max} value={value} onFocus={(e)=>e.target.select()} onChange={(e)=>onChange(clamp(parseInt(e.target.value)||0))} style={{width:36,height:32,border:"none",borderLeft: "1px solid #333",borderRight: "1px solid #333",textAlign:"center",fontSize:12,fontWeight:500,fontFamily:FONT,outline:"none",background:"transparent",padding:0,color:"#fff"}}/><button className="da-qty-btn" onClick={()=>onChange(clamp(value+1))} style={{...s,opacity:atMax?0.3:1,cursor:atMax?"default":"pointer"}}>+</button></div>);
+  return (
+    <div style={{display:"inline-flex",alignItems:"center",borderRadius:10,border:`1px solid ${atMax?"#eab308":"#444"}`,overflow:"hidden",background: "#000"}}>
+      <button type="button" className="da-qty-btn" aria-label={`Remove one ${label}`} onClick={()=>onChange(Math.max(0,value-1))} style={s}>−</button>
+      <input type="number" inputMode="numeric" min="0" max={max} aria-label={`Quantity, ${label}`} value={value} onFocus={(e)=>e.target.select()} onChange={(e)=>onChange(clamp(parseInt(e.target.value)||0))} style={{width:48,height:44,border:"none",borderLeft: "1px solid #333",borderRight: "1px solid #333",textAlign:"center",fontSize:16,fontWeight:500,fontFamily:FONT,background:"transparent",padding:0,color:"#fff"}}/>
+      <button type="button" className="da-qty-btn" aria-label={`Add one ${label}`} onClick={()=>onChange(clamp(value+1))} style={{...s,opacity:atMax?0.35:1,cursor:atMax?"default":"pointer"}}>+</button>
+    </div>
+  );
 }
 
 export function FadeIn({ children, delay = 0, style = {} }) {
@@ -159,7 +196,7 @@ export function CountrySelect({ value, onChange, id, style = {} }) {
         className="da-input da-select"
         value={value || ""}
         onChange={(e) => onChange(e.target.value)}
-        style={{ ...inputStyle, appearance: "none", WebkitAppearance: "none", MozAppearance: "none", cursor: "pointer", paddingRight: 36, color: value ? "#ccc" : "#666", ...style }}
+        style={{ ...inputStyle, appearance: "none", WebkitAppearance: "none", MozAppearance: "none", cursor: "pointer", paddingRight: 36, color: value ? "#ccc" : "#8a8a8a", ...style }}
       >
         <option value="" disabled>Select country…</option>
         {/* Shown so the buyer sees what's actually stored, but `disabled` —
@@ -170,7 +207,7 @@ export function CountrySelect({ value, onChange, id, style = {} }) {
         {legacy && <option value={legacy} disabled>{legacy} — not recognized, please reselect</option>}
         {COUNTRIES.map((c) => <option key={c.code} value={c.name}>{c.name}</option>)}
       </select>
-      <span aria-hidden="true" style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "#666", fontSize: 8 }}>▼</span>
+      <span aria-hidden="true" style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "#8a8a8a", fontSize: 8 }}>▼</span>
     </div>
   );
 }
@@ -234,7 +271,7 @@ export function ConfirmModal({ open, title, message, confirmLabel, cancelLabel, 
               that window fired the action twice — which for the invoice
               statuses meant two emails and two accounting drafts. */}
           <button onClick={onCancel} disabled={!open} style={{background:"transparent",border: "1px solid #2a2a2a",padding:"10px 20px",borderRadius:10,fontSize:11,letterSpacing:"0.08em",textTransform:"uppercase",cursor:open?"pointer":"default",fontFamily:FONT,color: "#888"}}>{cancelLabel||"Cancel"}</button>
-          <button onClick={onConfirm} disabled={!open} style={{background:danger?"#b91c1c":"#000",color:"#fff",border:"none",padding:"10px 24px",borderRadius:10,fontSize:11,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",cursor:open?"pointer":"default",fontFamily:FONT}}>{confirmLabel||"Confirm"}</button>
+          <button onClick={onConfirm} disabled={!open} style={{background:danger?"#f87171":"#000",color:"#fff",border:"none",padding:"10px 24px",borderRadius:10,fontSize:11,fontWeight:600,letterSpacing:"0.1em",textTransform:"uppercase",cursor:open?"pointer":"default",fontFamily:FONT}}>{confirmLabel||"Confirm"}</button>
         </div>
       </div>
     </div>
@@ -245,22 +282,28 @@ export function ConfirmModal({ open, title, message, confirmLabel, cancelLabel, 
    NOTE SECTION
    ═══════════════════════════════════════════ */
 
-export function NoteSection({ orderId, notes, isAdminView, noteInputs, setNoteInputs, addNote }) {
+// Admin-only, and labelled as such: the buyer never receives these (GET
+// /api/orders strips them) and cannot write one. Without the label it is far
+// too easy to type something here believing the buyer will read it.
+export function NoteSection({ orderId, notes, noteInputs, setNoteInputs, addNote }) {
   return (
     <div style={{marginTop:20}}>
-      <div style={{fontSize:10,textTransform:"uppercase",letterSpacing:"0.12em",color: "#666",marginBottom:10}}>Notes</div>
+      <div style={{display:"flex",alignItems:"baseline",gap:8,marginBottom:10}}>
+        <span style={{fontSize:10,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8a8a8a"}}>Internal notes</span>
+        <span style={{fontSize:10,color:"#8a8a8a"}}>— only DEE sees these</span>
+      </div>
       {(notes||[]).map((n,i) => (
-        <div key={i} style={{padding:"10px 14px",background:n.isAdmin?"#1a1a1a":"#0a0a0a",borderRadius:8,marginBottom:6,borderLeft:n.isAdmin?"3px solid #666":"3px solid #333"}}>
+        <div key={i} style={{padding:"10px 14px",background:"#1a1a1a",borderRadius:10,marginBottom:6,borderLeft:"3px solid #666"}}>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
             <span style={{fontSize:10,fontWeight:600,color: "#eee"}}>{n.author}</span>
-            <span style={{fontSize:9,color: "#999"}}>{new Date(n.date).toLocaleDateString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</span>
+            <span style={{fontSize:10,color: "#8a8a8a"}}>{new Date(n.date).toLocaleDateString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})}</span>
           </div>
-          <div style={{fontSize:12,color:"#999",lineHeight:1.6}}>{n.text}</div>
+          <div style={{fontSize:12,color:"#bbb",lineHeight:1.6}}>{n.text}</div>
         </div>
       ))}
       <div style={{display:"flex",gap:8,marginTop:8}}>
-        <input className="da-input" style={{...inputStyle,flex:1,padding:"10px 14px",fontSize:12}} placeholder="Add a note..." value={noteInputs[orderId]||""} onChange={e=>setNoteInputs(n=>({...n,[orderId]:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&addNote(orderId,isAdminView)} />
-        <button onClick={()=>addNote(orderId,isAdminView)} style={{background:"#000",color:"#fff",border:"none",padding:"10px 18px",borderRadius:10,fontSize:10,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,whiteSpace:"nowrap"}}>Add</button>
+        <input className="da-input" style={{...inputStyle,flex:1,padding:"10px 14px",fontSize:16}} placeholder="Add an internal note…" value={noteInputs[orderId]||""} onChange={e=>setNoteInputs(n=>({...n,[orderId]:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&addNote(orderId)} />
+        <button className="da-btn" onClick={()=>addNote(orderId)} style={{background:"#fff",color:"#000",border:"none",padding:"10px 18px",borderRadius:10,fontSize:10,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT,whiteSpace:"nowrap"}}>Add</button>
       </div>
     </div>
   );
@@ -274,22 +317,23 @@ export function NoteSection({ orderId, notes, isAdminView, noteInputs, setNoteIn
 // one-field flow on three of them — having to reach for the mouse was pure
 // friction). Every other button inside therefore needs type="button", or it
 // would submit the form too.
-export function AuthScreen({ title, fields, onSubmit, submitLabel, altText, altAction, altLabel, authError, onBack, busy }) {
+// No `altText`/`altAction`/`altLabel` any more: they existed only for the
+// "Need an account? Create one" link, and the portal is invite-only.
+export function AuthScreen({ title, fields, onSubmit, submitLabel, authError, onBack, busy }) {
   return (
     <div style={{...base,background: "#000",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100vh"}}>
       <div style={{width:"100%",maxWidth:380,padding:"0 24px",boxSizing:"border-box"}}>
         <div style={{animation:"scaleIn 0.6s cubic-bezier(0.23,1,0.32,1) 0s both",textAlign:"center",marginBottom:48}}>
           <div style={{display:"flex",justifyContent:"center"}}><Logo style={{ height: 22 }} /></div>
-          <div style={{fontSize:9,letterSpacing:"0.3em",textTransform:"uppercase",color: "#666",marginTop:20}}>{title}</div>
+          <div style={{fontSize:9,letterSpacing:"0.3em",textTransform:"uppercase",color: "#8a8a8a",marginTop:20}}>{title}</div>
         </div>
-        {authError && <div style={{background:"#2a0a0a",border:"1px solid #8b4545",borderRadius:10,padding:"10px 16px",fontSize:12,color:"#dc2626",marginBottom:20,animation:"fadeUp 0.3s ease"}}>{authError}</div>}
+        {authError && <div style={{background:"#2a0a0a",border:"1px solid #8b4545",borderRadius:10,padding:"10px 16px",fontSize:12,color:"#f87171",marginBottom:20,animation:"fadeUp 0.3s ease"}}>{authError}</div>}
         <form onSubmit={(e) => { e.preventDefault(); if (!busy) onSubmit(); }}>
           <FadeIn delay={0.15}>
             <div style={{display:"flex",flexDirection:"column",gap:16}}>{fields}</div>
           </FadeIn>
           <FadeIn delay={0.3}>
-            <button type="submit" className="da-btn" disabled={busy} style={{width:"100%",background:"#000",color:"#fff",border:"none",padding:"16px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:busy?"default":"pointer",opacity:busy?0.55:1,fontFamily:FONT,marginTop:24,transition:"opacity 0.2s"}}>{busy ? "Please wait…" : submitLabel}</button>
-            {altText && <div style={{textAlign:"center",marginTop:20}}><button type="button" onClick={altAction} style={{background:"none",border:"none",fontSize:12,color: "#666",cursor:"pointer",fontFamily:FONT}}>{altText} <span style={{color: "#fff",fontWeight:500}}>{altLabel}</span></button></div>}
+            <button type="submit" className="da-btn" disabled={busy} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"16px",borderRadius:12,fontSize:11,fontWeight:600,letterSpacing:"0.15em",textTransform:"uppercase",cursor:busy?"default":"pointer",opacity:busy?0.55:1,fontFamily:FONT,marginTop:24,transition:"opacity 0.2s"}}>{busy ? "Please wait…" : submitLabel}</button>
             <div style={{textAlign:"center",marginTop:12}}><button type="button" onClick={onBack} style={{background:"none",border:"none",fontSize:11,color: "#999",cursor:"pointer",fontFamily:FONT}}>← Back</button></div>
           </FadeIn>
         </form>
@@ -327,7 +371,7 @@ export function UserNav({ view, setView, session, currentUser, handleLogout }) {
       </>}
       <span style={{fontSize:10,color: "#999"}}>|</span>
       <span style={{fontSize:11,color: "#888"}}>{currentUser?.company}</span>
-      <button onClick={handleLogout} style={{background:"none",border: "1px solid #2a2a2a",padding:"6px 14px",borderRadius:8,fontSize:10,color: "#666",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Sign Out</button>
+      <button onClick={handleLogout} style={{background:"none",border: "1px solid #2a2a2a",padding:"6px 14px",borderRadius:8,fontSize:10,color: "#8a8a8a",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Sign Out</button>
     </div>
   );
 }
