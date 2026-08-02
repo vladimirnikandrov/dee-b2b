@@ -23,6 +23,34 @@ The longstanding tech-debt items previously listed here (monolith split, no TS/t
 
 ---
 
+## 2026-08-02 (late) — The logo in emails is text now, not an image
+
+The rename shipped an hour earlier fixed the cache, and then Vladimir's next login code arrived with an empty
+broken-image box where the logo should be. Apple Mail was showing *"Your network preferences prevent content
+from loading privately"* — it had not loaded the image at all. The previous email had looked fine only because
+the old wordmark was already sitting in its local cache; the new URL had nothing cached, so there was nothing
+to draw.
+
+Both hosts serve the file (checked, 200 on each), so this was never a broken link. It is what an `<img>` in an
+email is: something rendered on someone else's machine, under their rules. Remote images are off by default in
+Outlook, off in most corporate mail, and off in Apple Mail whenever its privacy proxy is unreachable — and
+every one of those recipients was getting a broken box in place of the brand.
+
+The DEE wordmark is the word "DEE" in Helvetica Bold, a font every mail client already has. It is now set as
+text. No fetch, no cache, no failure mode — and no `<img>` tag left in any template, which
+`lib/__tests__/email-templates.test.js` now asserts for all fifteen of them, along with the brand being
+present as text. `renderTransactionalEmail()` is exported so templates can be rendered and looked at without
+sending to a real inbox — the reason this went unnoticed for a week is that nothing here had ever been
+rendered outside a real send.
+
+Verified by rendering every template with **all remote requests blocked**, which is exactly the state that
+broke it: the emails come out complete, logo included.
+
+Also in the templates while they were open: the small print was `#777` on black (4.4:1, just under AA) in 38
+places — now `#999` (7.2:1) — and the VAT row read "VAT Danish VAT 25%" because the label already says VAT.
+
+---
+
 ## 2026-08-02 (night) — Wave 2, and the old domain out of the product
 
 ### The logo in emails was still the pre-rebrand one
