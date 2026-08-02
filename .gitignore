@@ -53,3 +53,6 @@ coverage/
 # Local notes
 notes.md
 TODO.md
+
+# Audit screenshot sweeps — ~5 MB per run, regenerate with scripts/audit-sweep.mjs
+screenshots/

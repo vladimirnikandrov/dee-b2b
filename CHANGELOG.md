@@ -23,6 +23,44 @@ The longstanding tech-debt items previously listed here (monolith split, no TS/t
 
 ---
 
+## 2026-08-02 — Phase 0 audit (no product changes)
+
+Groundwork for the polish pass, ahead of the client going into full daily use. Nothing in `app/` or `lib/`
+changed — this entry is the audit itself plus the tooling that produced it.
+
+**`scripts/audit-sweep.mjs`** walks every flow on the production build and writes 35 screenshots per viewport
+(1440 and 375), including the states nobody screenshots by hand: submitted-empty forms, a wrong OTP, an unknown
+email, an invalid promo code, `/api/orders` frozen mid-flight, `/api/orders` aborted, `/api/inventory` aborted.
+OTP codes are read straight out of `login_otps` instead of email, so a sweep sends nothing to anyone — and the
+script refuses to run unless both the database and the base URL are local, because it deletes its own audit
+accounts before each run. `scripts/audit-perf.mjs` records what each screen actually transfers.
+
+One capture detail worth keeping: the header is `position: sticky`, and a full-page screenshot paints a sticky
+element at its *scrolled* offset — which put the header across the middle of every mobile form and read exactly
+like a layout bug. The script now scrolls to top before each shot.
+
+**81 findings, 78 confirmed, 3 refuted** — seven audit lenses over the screenshots and the source, each finding
+then attacked by a skeptic told to refute it. Written up in [`PHASE-0-AUDIT.md`](./PHASE-0-AUDIT.md) with a
+wave split; the refuted three are recorded there too so they don't get raised again. Two worth naming here:
+
+- **The primary button on the sign-in screen is `#000` on a `#000` page** (`shared.js:291`), so `SEND CODE`
+  renders as bare text with no button shape. Same at `SAVE PDF`, `EXPORT CSV` and every note `ADD`. The landing
+  page does it correctly, which is what makes it read as broken rather than austere.
+- **The on-screen invoice contradicts the PDF of the same invoice.** The 2026-08-01 fix (each document states
+  only its own VAT) landed in `lib/invoice-pdf.js` only; `InvoiceView.js:86-98` still prints the whole order's
+  VAT and total above a shipping-only amount due. Same invoice number, two different documents — worse than
+  before the PDF was fixed.
+
+Measured rather than assumed: the catalogue transfers **13.8 MB** of imagery, **13.2 MB** of it one
+3727×3727 `discover-me.png` shown in a ~300 px cell, for a product that is out of stock — 5.5 s of image
+loading on a 20 Mbit line, and a 12 193 px page on a phone. `hero-cover.png` (4.8 MB) is exported and never
+rendered. Lighthouse on the landing page reads 100/95/96, which flatters the app: that page is 2 KB and
+everything heavy is behind the login, where Lighthouse can't go.
+
+`screenshots/` is gitignored — about 5 MB per run, regenerate rather than store.
+
+---
+
 ## 2026-08-01 (evening) — The remaining 26 audit findings
 
 Everything the audit found is now fixed. Grouped by what was actually wrong, because most of these were the same mistake wearing different clothes.
