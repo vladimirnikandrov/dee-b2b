@@ -41,6 +41,27 @@ export const TEXT = {
 
 export const SPACE = { xs: 4, sm: 8, md: 12, base: 16, lg: 24, xl: 32, xxl: 48 };
 
+// A surface ladder, which the portal did not have: the page was #000 and so was
+// every card on it, so a card was nothing but a thin outline drawn on the void —
+// and at full width that reads as an empty rectangle with some text in one
+// corner. Each step up is a real, if quiet, lift. Borders are hairlines; the
+// shadow belongs to the floating layer only.
+export const SURFACE = {
+  page: "#000",
+  card: "#0d0d0d",     // anything sitting in the flow
+  inset: "#141414",    // a well inside a card: inputs, item lists, sub-panels
+  raised: "#161616",   // dialogs and popovers — the only layer above the page
+  line: "#1f1f1f",     // hairline between rows
+  lineStrong: "#2b2b2b", // the edge of a card
+};
+
+// One measure for the whole portal. Rows used to run the full width of the
+// window — 1770px on a 1920 screen, with the content in the left sixth and a
+// price stranded at the far right, which is most of why these screens read as
+// "strange". 1120 is wide enough for the admin's seven-stage order rows and
+// narrow enough that the eye connects the two ends of a line.
+export const PAGE = { maxWidth: 1120, gutter: 32 };
+
 // Text on #000. Every value here clears 4.5:1 — the portal used #666 (3.66:1)
 // as its label colour and #dc2626 (3.4:1) for errors.
 export const INK = {
@@ -407,9 +428,12 @@ export function ConfirmModal({ open, title, message, confirmLabel, cancelLabel, 
         aria-labelledby={titleId}
         aria-describedby={messageId}
         onClick={e=>e.stopPropagation()}
-        style={{background: "#111",borderRadius:16,padding:"32px 32px 24px",maxWidth:380,width:"90%",border:"1px solid #262626",boxShadow:"0 24px 70px rgba(0,0,0,0.65)",animation:open?"scaleIn 0.2s ease":"scaleOut 0.17s ease forwards"}}
+        style={{background: SURFACE.raised,color:INK.primary,borderRadius:16,padding:"32px 32px 24px",maxWidth:420,width:"90%",border:`1px solid ${SURFACE.lineStrong}`,boxShadow:"0 24px 70px rgba(0,0,0,0.65)",animation:open?"scaleIn 0.2s ease":"scaleOut 0.17s ease forwards"}}
       >
-        <h2 id={titleId} style={{fontSize:16,fontWeight:600,marginBottom:8,fontFamily:FONT}}>{title}</h2>
+        {/* An explicit colour, because this dialog is mounted at the app root
+            — outside the view's `base` wrapper — so it inherits the document
+            default, which on a #111 panel is black text nobody can read. */}
+        <h2 id={titleId} style={{fontSize:16,fontWeight:600,marginBottom:8,fontFamily:FONT,color:INK.primary}}>{title}</h2>
         <div id={messageId} style={{fontSize:13,color: "#9a9a9a",lineHeight:1.7,marginBottom:28,fontFamily:FONT}}>{message}</div>
         <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
           {/* Both are disabled once `open` flips false: the dialog stays

@@ -1,7 +1,7 @@
 "use client";
 import { PRODUCTS } from "@/lib/products";
 import { SIZE_LABELS, formatEUR } from "@/lib/format";
-import { base, Header, NoteSection, inputStyle, labelStyle, FONT, ORDER_STATUSES } from "./shared";
+import { base, Header, NoteSection, inputStyle, labelStyle, FONT, ORDER_STATUSES, SURFACE, INK, RADIUS, TEXT, PAGE } from "./shared";
 
 // Whether each of an order's two invoices actually reached e-conomic. Until
 // now the only signal was a sync-failure row, so a draft that silently never
@@ -63,7 +63,7 @@ function EconomicSync({ economic, statuses, cancelled }) {
 // How many orders are drawn before "show more". Nothing here is paginated
 // server-side — the whole list is already in memory — this is purely about not
 // rendering a 40 000px page.
-const PAGE = 25;
+const ORDERS_PER_PAGE = 25;
 
 // Drafts that exist in Dorte's real accounting and have to be removed there by
 // hand: the ones an edit superseded, plus a cancelled order's live drafts.
@@ -73,6 +73,32 @@ function orphanCount(order) {
   const superseded = (e.supersededDrafts || []).length;
   const live = order.cancelled ? [e.depositDraftNumber, e.balanceDraftNumber].filter(Boolean).length : 0;
   return superseded + live;
+}
+
+// One row of the settings list. Five separate full-width bordered boxes with a
+// label in the corner and a "+" at the far end is ~640px of chrome before the
+// first order — and it reads as five empty rectangles rather than a list of
+// things you can open. This is one card, rows divided by hairlines, each
+// carrying its own state on the right.
+function Section({ id, label, meta, tone, expanded, onToggle, last, children }) {
+  const open = expanded === id;
+  return (
+    <div style={{borderBottom: last && !open ? "none" : `1px solid ${SURFACE.line}`}}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        style={{width:"100%",padding:"16px 20px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontFamily:FONT,color:INK.primary,display:"flex",justifyContent:"space-between",alignItems:"center",gap:16}}
+      >
+        <span style={{fontSize:TEXT.bodyLg,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",color: tone || INK.primary}}>{label}</span>
+        <span style={{display:"flex",alignItems:"center",gap:12}}>
+          {meta && <span style={{fontSize:TEXT.body,color: tone || INK.muted,fontVariantNumeric:"tabular-nums"}}>{meta}</span>}
+          <span aria-hidden="true" style={{fontSize:TEXT.body,color:INK.faint,transform:open?"rotate(90deg)":"none",transition:"transform 0.2s ease",display:"inline-block",width:10}}>›</span>
+        </span>
+      </button>
+      {open && <div style={{borderTop:`1px solid ${SURFACE.line}`,padding:20,background:SURFACE.page}}>{children}</div>}
+    </div>
+  );
 }
 
 export default function AdminView({
@@ -158,227 +184,182 @@ export default function AdminView({
   return (
     <div style={base}>
       <Header currentUser={currentUser} setView={setView} right={<div style={{display:"flex",gap:10,alignItems:"center"}}><button onClick={()=>setView("catalog")} style={{background:"none",border: "1px solid #2a2a2a",padding:"6px 12px",borderRadius:10,fontSize:10,color: "#888",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>View portal</button><button onClick={handleLogout} style={{background:"none",border: "1px solid #2a2a2a",padding:"6px 12px",borderRadius:10,fontSize:10,color: "#8a8a8a",cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Sign Out</button></div>} />
-      <main className="da-pad" style={{padding:"48px 48px"}}>
+      <main className="da-pad" style={{maxWidth:PAGE.maxWidth,margin:"0 auto",padding:"48px 32px 96px"}}>
         <h1 style={{fontSize:17,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:32}}>Admin panel</h1>
 
-        <div style={{background: "#000",borderRadius:10,border: "1px solid #2a2a2a",marginBottom:32}}>
-          <button onClick={()=>setAdminExpanded(adminExpanded==="promos"?null:"promos")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:FONT,color:"#fff"}}>
-            Promo Codes
-            <span style={{fontSize:16,color:"#888"}}>{adminExpanded==="promos"?"−":"+"}</span>
-          </button>
-          {adminExpanded==="promos" && (
-            <div style={{borderTop: "1px solid #222",padding:"20px"}}>
-              <div style={{marginBottom:24}}>
-                {promoCodes.map((p,i) => (
-                  <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px",background: "#1a1a1a",borderRadius:10,marginBottom:8,fontSize:11}}>
-                    <div>
-                      <div style={{fontWeight:600}}>{p.code}</div>
-                      <div style={{color: "#888",fontSize:11,marginTop:2}}>{p.label} — {p.prices["2 ML"]}/{p.prices["20 ML"]}/{p.prices["50 ML"]}/{p.prices["100 ML"]} · Kit {p.prices["KIT"]}</div>
-                    </div>
-                    <button onClick={()=>deletePromoCode(p.code)} style={{background:"#f87171",color:"#fff",border:"none",padding:"6px 12px",borderRadius:10,fontSize:11,cursor:"pointer",fontFamily:FONT,fontWeight:500}}>Delete</button>
+        {/* Everything that is settings rather than work, in one list. */}
+        <div style={{background:SURFACE.card,border:`1px solid ${SURFACE.lineStrong}`,borderRadius:RADIUS.control,overflow:"hidden",marginBottom:32}}>
+        <Section id="promos" label="Promo codes" meta={promoCodes.length ? `${promoCodes.length} active` : "None yet"} expanded={adminExpanded} onToggle={()=>setAdminExpanded(adminExpanded==="promos"?null:"promos")} last={false}>
+            <div style={{marginBottom:24}}>
+              {promoCodes.map((p,i) => (
+                <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px",background: "#1a1a1a",borderRadius:10,marginBottom:8,fontSize:11}}>
+                  <div>
+                    <div style={{fontWeight:600}}>{p.code}</div>
+                    <div style={{color: "#888",fontSize:11,marginTop:2}}>{p.label} — {p.prices["2 ML"]}/{p.prices["20 ML"]}/{p.prices["50 ML"]}/{p.prices["100 ML"]} · Kit {p.prices["KIT"]}</div>
                   </div>
-                ))}
-              </div>
-              <div style={{background: "#0a0a0a",padding:"16px",borderRadius:10}}>
-                <div style={{fontSize:11,fontWeight:600,marginBottom:12,letterSpacing:"0.08em",textTransform:"uppercase",color: "#888"}}>Add New Code</div>
-                <div style={{display:"grid",gap:12,marginBottom:12}}>
-                  <input className="da-input" style={{...inputStyle,fontSize:16}} placeholder="Code (e.g. MOODSCENTBAR)" value={adminPromoForm.code} onChange={e=>setAdminPromoForm({...adminPromoForm,code:e.target.value})} />
-                  <input className="da-input" style={{...inputStyle,fontSize:16}} placeholder="Label (e.g. B2VIP)" value={adminPromoForm.label} onChange={e=>setAdminPromoForm({...adminPromoForm,label:e.target.value})} />
-                  <div className="da-grid-promo" style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
-                    {["2 ML","20 ML","50 ML","100 ML","KIT"].map(size => {
-                      const placeholderSize = {
-                        "100 ML": "€ 100ml",
-                        "50 ML": "€ 50ml",
-                        "20 ML": "€ 20ml",
-                        "2 ML": "€ 2ml",
-                        "KIT": "€ Kit"
-                      }[size];
-                      return (
-                        <div key={size}><label style={{...labelStyle,fontSize:11}}>{size}</label><input className="da-input" style={{...inputStyle,fontSize:16}} type="number" placeholder={placeholderSize} value={adminPromoForm.prices[size]} onChange={e=>setAdminPromoForm({...adminPromoForm,prices:{...adminPromoForm.prices,[size]:e.target.value}})} /></div>
-                      );
-                    })}
-                  </div>
+                  <button onClick={()=>deletePromoCode(p.code)} style={{background:"#f87171",color:"#fff",border:"none",padding:"6px 12px",borderRadius:10,fontSize:11,cursor:"pointer",fontFamily:FONT,fontWeight:500}}>Delete</button>
                 </div>
-                <button onClick={savePromoCode} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"12px",borderRadius:10,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Save Code</button>
-              </div>
+              ))}
             </div>
-          )}
-        </div>
-
-        <div style={{background: "#000",borderRadius:10,border: "1px solid #2a2a2a",marginBottom:32}}>
-          <button onClick={()=>setAdminExpanded(adminExpanded==="inventory"?null:"inventory")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:FONT,color:"#fff"}}>
-            <span>Inventory{inventoryDirty && <span style={{fontSize:11,color:"#eab308",letterSpacing:"0.08em",marginLeft:10,fontWeight:400}}>UNSAVED</span>}</span>
-            <span style={{fontSize:16,color:"#888"}}>{adminExpanded==="inventory"?"−":"+"}</span>
-          </button>
-          {adminExpanded==="inventory" && (
-            <div style={{borderTop: "1px solid #222",padding:"20px"}}>
-              <div style={{fontSize:10,color: "#8a8a8a",marginBottom:16,letterSpacing:"0.08em",textTransform:"uppercase",fontWeight:600}}>Current Stock</div>
-              <div className="da-grid-inv" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16,maxHeight:"400px",overflowY:"auto"}}>
-                {PRODUCTS.map((p,pi) => p.variants.map((v,vi) => (
-                  <div key={`${pi}-${vi}`} style={{padding:"12px",background: "#1a1a1a",borderRadius:10,border: "1px solid #222"}}>
-                    <div style={{fontSize:11,fontWeight:600,color: "#eee",marginBottom:4}}>{p.name}</div>
-                    <div style={{fontSize:11,color: "#8a8a8a",marginBottom:8}}>{v.size}</div>
-                    {/* An empty field used to commit a 0 the moment it was
-                        cleared, so clearing it to retype read as "zero this
-                        SKU". It can now be empty while being retyped, and
-                        reverts to its last value on blur — leaving it blank and
-                        pressing Save must not silently do nothing while the
-                        panel reports success. To actually zero a SKU, type 0. */}
-                    <input type="number" inputMode="numeric" className="da-input" aria-label={`Stock, ${p.name} ${v.size}`} style={{...inputStyle,fontSize:16,padding:"8px 12px"}} value={inventory[v.sku]!==undefined&&inventory[v.sku]!==null?inventory[v.sku]:""} onFocus={e=>e.target.select()} onBlur={()=>{if(inventory[v.sku]===null||inventory[v.sku]===undefined)setInventory({...inventory,[v.sku]:inventorySaved[v.sku] ?? 0});}} onChange={e=>{const raw=e.target.value;if(raw===""){setInventory({...inventory,[v.sku]:null});return;}const n=parseInt(raw,10);setInventory({...inventory,[v.sku]:isNaN(n)?0:Math.max(0,n)});}} placeholder="0"/>
-                  </div>
-                )))}
-              </div>
-              <button className="da-btn" onClick={saveInventory} disabled={!inventoryLoaded} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"12px",borderRadius:10,fontSize:11,fontWeight:600,cursor:inventoryLoaded?"pointer":"default",opacity:inventoryLoaded?1:0.4,fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>{inventoryDirty ? "Save changes" : "Save all"}</button>
-              {/* The one sentence explaining the greyed-out button lived in a
-                  toast the disabled button could never fire. */}
-              {!inventoryLoaded && <div style={{marginTop:8,fontSize:12,color:"#eab308",textAlign:"center",lineHeight:1.6}}>Stock couldn&apos;t be loaded — reload the page before saving, or you&apos;d be writing over figures this page never read.</div>}
-              {inventoryLoaded && inventoryDirty && <div style={{marginTop:8,fontSize:12,color:"#9a9a9a",textAlign:"center"}}>Unsaved changes</div>}
-            </div>
-          )}
-        </div>
-
-        <div style={{background: "#000",borderRadius:10,border: "1px solid #2a2a2a",marginBottom:32}}>
-          <button onClick={()=>setAdminExpanded(adminExpanded==="buyers"?null:"buyers")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:FONT,color:"#fff"}}>
-            Buyers ({buyers.length})
-            <span style={{fontSize:16,color:"#888"}}>{adminExpanded==="buyers"?"−":"+"}</span>
-          </button>
-          {adminExpanded==="buyers" && (
-            <div style={{borderTop: "1px solid #222",padding:"20px"}}>
-              <div style={{marginBottom:24,maxHeight:300,overflowY:"auto"}}>
-                {/* Invite-only means the account is the access control, so it
-                    has to be revocable — a shop that closed, a contact who
-                    moved on, an address typed wrong. */}
-                {buyers.map((b) => (
-                  <div key={b.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,padding:"12px",background: "#1a1a1a",borderRadius:10,marginBottom:8,fontSize:11}}>
-                    <div style={{minWidth:0}}>
-                      <div style={{fontWeight:600,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                        <span style={{opacity:b.deactivated_at?0.6:1}}>{b.email}</span>
-                        {b.deactivated_at && <span style={{padding:"2px 7px",border:"1px solid #4a3a10",color:"#eab308",borderRadius:10,fontSize:11,letterSpacing:"0.08em"}}>NO ACCESS</span>}
-                      </div>
-                      <div style={{color: "#8a8a8a",fontSize:11,marginTop:3}}>
-                        {[b.company, `${b.order_count || 0} order${b.order_count === 1 ? "" : "s"}`, b.created_at ? `since ${new Date(b.created_at).toLocaleDateString("en-GB",{month:"short",year:"numeric"})}` : null].filter(Boolean).join(" · ")}
-                      </div>
-                    </div>
-                    {b.deactivated_at
-                      ? <button className="da-btn" onClick={()=>restoreBuyer(b)} style={{background:"transparent",border:"1px solid #333",color:"#eee",padding:"8px 12px",borderRadius:10,fontSize:10,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.06em",textTransform:"uppercase",whiteSpace:"nowrap"}}>Restore</button>
-                      : <button className="da-btn" onClick={()=>removeBuyer(b)} style={{background:"transparent",border:"1px solid #f87171",color:"#f87171",padding:"8px 12px",borderRadius:10,fontSize:10,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.06em",textTransform:"uppercase",whiteSpace:"nowrap"}}>Remove</button>}
-                  </div>
-                ))}
-                {buyers.length === 0 && <div style={{color: "#8a8a8a",fontSize:11}}>No invited buyers yet.</div>}
-              </div>
-              <div style={{background: "#0a0a0a",padding:"16px",borderRadius:10}}>
-                <div style={{fontSize:11,fontWeight:600,marginBottom:12,letterSpacing:"0.08em",textTransform:"uppercase",color: "#888"}}>Invite a new buyer</div>
-                <div style={{display:"grid",gap:12,marginBottom:12}}>
-                  <input className="da-input" style={{...inputStyle,fontSize:16}} type="email" placeholder="Email" value={buyerManageForm.email} onChange={e=>setBuyerManageForm({...buyerManageForm,email:e.target.value})} />
-                  <input className="da-input" style={{...inputStyle,fontSize:16}} placeholder="Name / company (optional)" value={buyerManageForm.company} onChange={e=>setBuyerManageForm({...buyerManageForm,company:e.target.value})} />
+            <div style={{background: "#0a0a0a",padding:"16px",borderRadius:10}}>
+              <div style={{fontSize:11,fontWeight:600,marginBottom:12,letterSpacing:"0.08em",textTransform:"uppercase",color: "#888"}}>Add New Code</div>
+              <div style={{display:"grid",gap:12,marginBottom:12}}>
+                <input className="da-input" style={{...inputStyle,fontSize:16}} placeholder="Code (e.g. MOODSCENTBAR)" value={adminPromoForm.code} onChange={e=>setAdminPromoForm({...adminPromoForm,code:e.target.value})} />
+                <input className="da-input" style={{...inputStyle,fontSize:16}} placeholder="Label (e.g. B2VIP)" value={adminPromoForm.label} onChange={e=>setAdminPromoForm({...adminPromoForm,label:e.target.value})} />
+                <div className="da-grid-promo" style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
+                  {["2 ML","20 ML","50 ML","100 ML","KIT"].map(size => {
+                    const placeholderSize = {
+                      "100 ML": "€ 100ml",
+                      "50 ML": "€ 50ml",
+                      "20 ML": "€ 20ml",
+                      "2 ML": "€ 2ml",
+                      "KIT": "€ Kit"
+                    }[size];
+                    return (
+                      <div key={size}><label style={{...labelStyle,fontSize:11}}>{size}</label><input className="da-input" style={{...inputStyle,fontSize:16}} type="number" placeholder={placeholderSize} value={adminPromoForm.prices[size]} onChange={e=>setAdminPromoForm({...adminPromoForm,prices:{...adminPromoForm.prices,[size]:e.target.value}})} /></div>
+                    );
+                  })}
                 </div>
-                <button onClick={inviteBuyer} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"12px",borderRadius:10,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Invite buyer</button>
-                <div style={{fontSize:11,color: "#8a8a8a",marginTop:10,lineHeight:1.5}}>They'll get a welcome email explaining how the platform works — no password to set, they just sign in with a code.</div>
               </div>
+              <button onClick={savePromoCode} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"12px",borderRadius:10,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Save Code</button>
             </div>
-          )}
-        </div>
+        </Section>
 
-        <div style={{background: "#000",borderRadius:10,border: "1px solid #2a2a2a",marginBottom:32}}>
-          <button onClick={()=>setAdminExpanded(adminExpanded==="admins"?null:"admins")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:FONT,color:"#fff"}}>
-            Admins ({admins.length})
-            <span style={{fontSize:16,color:"#888"}}>{adminExpanded==="admins"?"−":"+"}</span>
-          </button>
-          {adminExpanded==="admins" && (
-            <div style={{borderTop: "1px solid #222",padding:"20px"}}>
-              <div style={{marginBottom:24}}>
-                {admins.map((a) => (
-                  <div key={a.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px",background: "#1a1a1a",borderRadius:10,marginBottom:8,fontSize:11}}>
-                    <div>
-                      <div style={{fontWeight:600}}>{a.email}{a.id===session?.id && <span style={{marginLeft:8,color:"#8a8a8a",fontWeight:400,fontSize:11}}>(you)</span>}</div>
-                      {a.company && <div style={{color: "#888",fontSize:11,marginTop:2}}>{a.company}</div>}
-                    </div>
-                    {a.id !== session?.id && <button onClick={()=>removeAdmin(a.id)} style={{background:"#f87171",color:"#fff",border:"none",padding:"6px 12px",borderRadius:10,fontSize:11,cursor:"pointer",fontFamily:FONT,fontWeight:500}}>Remove</button>}
-                  </div>
-                ))}
-              </div>
-              <div style={{background: "#0a0a0a",padding:"16px",borderRadius:10}}>
-                <div style={{fontSize:11,fontWeight:600,marginBottom:12,letterSpacing:"0.08em",textTransform:"uppercase",color: "#888"}}>Add a new admin</div>
-                <div style={{display:"grid",gap:12,marginBottom:12}}>
-                  <input className="da-input" style={{...inputStyle,fontSize:16}} type="email" placeholder="Email" value={adminManageForm.email} onChange={e=>setAdminManageForm({...adminManageForm,email:e.target.value})} />
-                  <input className="da-input" style={{...inputStyle,fontSize:16}} placeholder="Name / company (optional)" value={adminManageForm.company} onChange={e=>setAdminManageForm({...adminManageForm,company:e.target.value})} />
+        <Section id="inventory" label="Inventory" meta={inventoryDirty ? "Unsaved changes" : null} tone={inventoryDirty ? INK.warn : undefined} expanded={adminExpanded} onToggle={()=>setAdminExpanded(adminExpanded==="inventory"?null:"inventory")} last={false}>
+            <div style={{fontSize:10,color: "#8a8a8a",marginBottom:16,letterSpacing:"0.08em",textTransform:"uppercase",fontWeight:600}}>Current Stock</div>
+            <div className="da-grid-inv" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16,maxHeight:"400px",overflowY:"auto"}}>
+              {PRODUCTS.map((p,pi) => p.variants.map((v,vi) => (
+                <div key={`${pi}-${vi}`} style={{padding:"12px",background: "#1a1a1a",borderRadius:10,border: "1px solid #222"}}>
+                  <div style={{fontSize:11,fontWeight:600,color: "#eee",marginBottom:4}}>{p.name}</div>
+                  <div style={{fontSize:11,color: "#8a8a8a",marginBottom:8}}>{v.size}</div>
+                  {/* An empty field used to commit a 0 the moment it was
+                      cleared, so clearing it to retype read as "zero this
+                      SKU". It can now be empty while being retyped, and
+                      reverts to its last value on blur — leaving it blank and
+                      pressing Save must not silently do nothing while the
+                      panel reports success. To actually zero a SKU, type 0. */}
+                  <input type="number" inputMode="numeric" className="da-input" aria-label={`Stock, ${p.name} ${v.size}`} style={{...inputStyle,fontSize:16,padding:"8px 12px"}} value={inventory[v.sku]!==undefined&&inventory[v.sku]!==null?inventory[v.sku]:""} onFocus={e=>e.target.select()} onBlur={()=>{if(inventory[v.sku]===null||inventory[v.sku]===undefined)setInventory({...inventory,[v.sku]:inventorySaved[v.sku] ?? 0});}} onChange={e=>{const raw=e.target.value;if(raw===""){setInventory({...inventory,[v.sku]:null});return;}const n=parseInt(raw,10);setInventory({...inventory,[v.sku]:isNaN(n)?0:Math.max(0,n)});}} placeholder="0"/>
                 </div>
-                <button onClick={addAdmin} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"12px",borderRadius:10,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Add admin</button>
-                <div style={{fontSize:11,color: "#8a8a8a",marginTop:10,lineHeight:1.5}}>They'll get a welcome email — no password to set, they just sign in with a code at the Admin entry point.</div>
-              </div>
+              )))}
             </div>
-          )}
-        </div>
+            <button className="da-btn" onClick={saveInventory} disabled={!inventoryLoaded} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"12px",borderRadius:10,fontSize:11,fontWeight:600,cursor:inventoryLoaded?"pointer":"default",opacity:inventoryLoaded?1:0.4,fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>{inventoryDirty ? "Save changes" : "Save all"}</button>
+            {/* The one sentence explaining the greyed-out button lived in a
+                toast the disabled button could never fire. */}
+            {!inventoryLoaded && <div style={{marginTop:8,fontSize:12,color:"#eab308",textAlign:"center",lineHeight:1.6}}>Stock couldn&apos;t be loaded — reload the page before saving, or you&apos;d be writing over figures this page never read.</div>}
+            {inventoryLoaded && inventoryDirty && <div style={{marginTop:8,fontSize:12,color:"#9a9a9a",textAlign:"center"}}>Unsaved changes</div>}
+        </Section>
+
+        <Section id="buyers" label="Buyers" meta={`${buyers.length}`} expanded={adminExpanded} onToggle={()=>setAdminExpanded(adminExpanded==="buyers"?null:"buyers")} last={false}>
+            <div style={{marginBottom:24,maxHeight:300,overflowY:"auto"}}>
+              {/* Invite-only means the account is the access control, so it
+                  has to be revocable — a shop that closed, a contact who
+                  moved on, an address typed wrong. */}
+              {buyers.map((b) => (
+                <div key={b.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,padding:"12px",background: "#1a1a1a",borderRadius:10,marginBottom:8,fontSize:11}}>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontWeight:600,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                      <span style={{opacity:b.deactivated_at?0.6:1}}>{b.email}</span>
+                      {b.deactivated_at && <span style={{padding:"2px 7px",border:"1px solid #4a3a10",color:"#eab308",borderRadius:10,fontSize:11,letterSpacing:"0.08em"}}>NO ACCESS</span>}
+                    </div>
+                    <div style={{color: "#8a8a8a",fontSize:11,marginTop:3}}>
+                      {[b.company, `${b.order_count || 0} order${b.order_count === 1 ? "" : "s"}`, b.created_at ? `since ${new Date(b.created_at).toLocaleDateString("en-GB",{month:"short",year:"numeric"})}` : null].filter(Boolean).join(" · ")}
+                    </div>
+                  </div>
+                  {b.deactivated_at
+                    ? <button className="da-btn" onClick={()=>restoreBuyer(b)} style={{background:"transparent",border:"1px solid #333",color:"#eee",padding:"8px 12px",borderRadius:10,fontSize:10,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.06em",textTransform:"uppercase",whiteSpace:"nowrap"}}>Restore</button>
+                    : <button className="da-btn" onClick={()=>removeBuyer(b)} style={{background:"transparent",border:"1px solid #f87171",color:"#f87171",padding:"8px 12px",borderRadius:10,fontSize:10,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.06em",textTransform:"uppercase",whiteSpace:"nowrap"}}>Remove</button>}
+                </div>
+              ))}
+              {buyers.length === 0 && <div style={{color: "#8a8a8a",fontSize:11}}>No invited buyers yet.</div>}
+            </div>
+            <div style={{background: "#0a0a0a",padding:"16px",borderRadius:10}}>
+              <div style={{fontSize:11,fontWeight:600,marginBottom:12,letterSpacing:"0.08em",textTransform:"uppercase",color: "#888"}}>Invite a new buyer</div>
+              <div style={{display:"grid",gap:12,marginBottom:12}}>
+                <input className="da-input" style={{...inputStyle,fontSize:16}} type="email" placeholder="Email" value={buyerManageForm.email} onChange={e=>setBuyerManageForm({...buyerManageForm,email:e.target.value})} />
+                <input className="da-input" style={{...inputStyle,fontSize:16}} placeholder="Name / company (optional)" value={buyerManageForm.company} onChange={e=>setBuyerManageForm({...buyerManageForm,company:e.target.value})} />
+              </div>
+              <button onClick={inviteBuyer} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"12px",borderRadius:10,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Invite buyer</button>
+              <div style={{fontSize:11,color: "#8a8a8a",marginTop:10,lineHeight:1.5}}>They'll get a welcome email explaining how the platform works — no password to set, they just sign in with a code.</div>
+            </div>
+        </Section>
+
+        <Section id="admins" label="Admins" meta={`${admins.length}`} expanded={adminExpanded} onToggle={()=>setAdminExpanded(adminExpanded==="admins"?null:"admins")} last={syncFailures.filter(f => !f.resolved).length === 0 && errorLog.length === 0}>
+            <div style={{marginBottom:24}}>
+              {admins.map((a) => (
+                <div key={a.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px",background: "#1a1a1a",borderRadius:10,marginBottom:8,fontSize:11}}>
+                  <div>
+                    <div style={{fontWeight:600}}>{a.email}{a.id===session?.id && <span style={{marginLeft:8,color:"#8a8a8a",fontWeight:400,fontSize:11}}>(you)</span>}</div>
+                    {a.company && <div style={{color: "#888",fontSize:11,marginTop:2}}>{a.company}</div>}
+                  </div>
+                  {a.id !== session?.id && <button onClick={()=>removeAdmin(a.id)} style={{background:"#f87171",color:"#fff",border:"none",padding:"6px 12px",borderRadius:10,fontSize:11,cursor:"pointer",fontFamily:FONT,fontWeight:500}}>Remove</button>}
+                </div>
+              ))}
+            </div>
+            <div style={{background: "#0a0a0a",padding:"16px",borderRadius:10}}>
+              <div style={{fontSize:11,fontWeight:600,marginBottom:12,letterSpacing:"0.08em",textTransform:"uppercase",color: "#888"}}>Add a new admin</div>
+              <div style={{display:"grid",gap:12,marginBottom:12}}>
+                <input className="da-input" style={{...inputStyle,fontSize:16}} type="email" placeholder="Email" value={adminManageForm.email} onChange={e=>setAdminManageForm({...adminManageForm,email:e.target.value})} />
+                <input className="da-input" style={{...inputStyle,fontSize:16}} placeholder="Name / company (optional)" value={adminManageForm.company} onChange={e=>setAdminManageForm({...adminManageForm,company:e.target.value})} />
+              </div>
+              <button onClick={addAdmin} style={{width:"100%",background:"#fff",color:"#000",border:"none",padding:"12px",borderRadius:10,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Add admin</button>
+              <div style={{fontSize:11,color: "#8a8a8a",marginTop:10,lineHeight:1.5}}>They'll get a welcome email — no password to set, they just sign in with a code at the Admin entry point.</div>
+            </div>
+        </Section>
 
         {/* ── Sync Failures (failed emails / e-conomic syncs) ── */}
         {syncFailures.filter(f => !f.resolved).length > 0 && (
-        <div style={{background: "#000",borderRadius:10,border: "1px solid #7c2d12",marginBottom:32}}>
-          <button onClick={()=>setAdminExpanded(adminExpanded==="syncFailures"?null:"syncFailures")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:FONT,color:"#f97316"}}>
-            Sync Failures ({syncFailures.filter(f => !f.resolved).length})
-            <span style={{fontSize:16,color:"#888"}}>{adminExpanded==="syncFailures"?"−":"+"}</span>
-          </button>
-          {adminExpanded==="syncFailures" && (
-            <div style={{borderTop: "1px solid #222",padding:"20px"}}>
-              <div style={{fontSize:11,color: "#888",marginBottom:16,lineHeight:1.5}}>An order's shipping/full invoice email or e-conomic sync failed and needs a look — check the order directly, then dismiss once handled.</div>
-              <div style={{display:"grid",gap:8}}>
-                {syncFailures.filter(f => !f.resolved).map((f) => (
-                  <div key={f.id} style={{padding:"12px",background: "#1a1a1a",borderRadius:10,border:"1px solid #7c2d12",fontSize:11}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
-                      <div>
-                        <div style={{fontWeight:600,color:"#f97316"}}>{f.type === "email" ? "Email" : "e-conomic"} — {f.context}{f.order_id && <> · <button onClick={()=>{setAdminCompanyFilter(null);setAdminStatusFilter("all");setAdminSearch(f.order_id);setAdminExpanded(null);}} style={{background:"none",border:"none",padding:0,color:"#eee",fontSize:11,fontFamily:FONT,cursor:"pointer",textDecoration:"underline",textUnderlineOffset:2}}>order {f.order_id}</button></>}</div>
-                        <div style={{color:"#999",fontSize:11,marginTop:4,fontFamily:"monospace",wordBreak:"break-all"}}>{f.error}</div>
-                        <div style={{color:"#8a8a8a",fontSize:11,marginTop:4}}>{new Date(f.created_at).toLocaleString("en-GB")}</div>
-                      </div>
-                      <button onClick={()=>resolveSyncFailure(f.id)} style={{background:"transparent",border:"1px solid #444",color:"#888",padding:"6px 12px",borderRadius:10,fontSize:11,cursor:"pointer",fontFamily:FONT,fontWeight:500,whiteSpace:"nowrap"}}>Dismiss</button>
+        <Section id="syncFailures" label="Sync failures" meta={`${syncFailures.filter(f => !f.resolved).length}`} tone={INK.danger} expanded={adminExpanded} onToggle={()=>setAdminExpanded(adminExpanded==="syncFailures"?null:"syncFailures")} last={errorLog.length === 0}>
+            <div style={{fontSize:11,color: "#888",marginBottom:16,lineHeight:1.5}}>An order's shipping/full invoice email or e-conomic sync failed and needs a look — check the order directly, then dismiss once handled.</div>
+            <div style={{display:"grid",gap:8}}>
+              {syncFailures.filter(f => !f.resolved).map((f) => (
+                <div key={f.id} style={{padding:"12px",background: "#1a1a1a",borderRadius:10,border:"1px solid #7c2d12",fontSize:11}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                    <div>
+                      <div style={{fontWeight:600,color:"#f97316"}}>{f.type === "email" ? "Email" : "e-conomic"} — {f.context}{f.order_id && <> · <button onClick={()=>{setAdminCompanyFilter(null);setAdminStatusFilter("all");setAdminSearch(f.order_id);setAdminExpanded(null);}} style={{background:"none",border:"none",padding:0,color:"#eee",fontSize:11,fontFamily:FONT,cursor:"pointer",textDecoration:"underline",textUnderlineOffset:2}}>order {f.order_id}</button></>}</div>
+                      <div style={{color:"#999",fontSize:11,marginTop:4,fontFamily:"monospace",wordBreak:"break-all"}}>{f.error}</div>
+                      <div style={{color:"#8a8a8a",fontSize:11,marginTop:4}}>{new Date(f.created_at).toLocaleString("en-GB")}</div>
                     </div>
+                    <button onClick={()=>resolveSyncFailure(f.id)} style={{background:"transparent",border:"1px solid #444",color:"#888",padding:"6px 12px",borderRadius:10,fontSize:11,cursor:"pointer",fontFamily:FONT,fontWeight:500,whiteSpace:"nowrap"}}>Dismiss</button>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
-          )}
-        </div>
+        </Section>
         )}
 
         {/* ── Error Log ── */}
         {errorLog.length > 0 && (
-        <div style={{background: "#000",borderRadius:10,border: "1px solid #2a2a2a",marginBottom:32}}>
-          <button onClick={()=>setAdminExpanded(adminExpanded==="errors"?null:"errors")} style={{width:"100%",padding:"16px 20px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",display:"flex",justifyContent:"space-between",alignItems:"center",fontFamily:FONT,color:"#f87171"}}>
-            Error Log ({errorLog.length})
-            <span style={{fontSize:16,color:"#888"}}>{adminExpanded==="errors"?"−":"+"}</span>
-          </button>
-          {adminExpanded==="errors" && (
-            <div style={{borderTop: "1px solid #222",padding:"20px"}}>
-              <div style={{display:"flex",gap:8,marginBottom:16}}>
-                <button onClick={()=>{navigator.clipboard.writeText(errorLog.map(e=>`[${e.ts}] ${e.source}: ${e.detail}`).join("\n"));showToast("Copied to clipboard");}} style={{background:"#fff",color:"#000",border:"none",padding:"8px 16px",borderRadius:10,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Copy All</button>
-                <button onClick={()=>setErrorLog([])} style={{background:"transparent",border:"1px solid #444",color:"#888",padding:"8px 16px",borderRadius:10,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Clear</button>
-              </div>
-              <div style={{maxHeight:300,overflowY:"auto",display:"grid",gap:6}}>
-                {errorLog.map((e,i) => (
-                  <div key={i} style={{padding:"10px 12px",background:"#1a1a1a",borderRadius:10,border:"1px solid #222",fontSize:11,fontFamily:"monospace",lineHeight:1.5}}>
-                    <div style={{color:"#8a8a8a",marginBottom:2}}>{new Date(e.ts).toLocaleTimeString("en-GB")} · <span style={{color:"#f87171",fontWeight:600}}>{e.source}</span></div>
-                    <div style={{color:"#ccc",wordBreak:"break-all"}}>{e.detail}</div>
-                  </div>
-                ))}
-              </div>
+        <Section id="errors" label="Error log" meta={`${errorLog.length}`} expanded={adminExpanded} onToggle={()=>setAdminExpanded(adminExpanded==="errors"?null:"errors")} last={true}>
+            <div style={{display:"flex",gap:8,marginBottom:16}}>
+              <button onClick={()=>{navigator.clipboard.writeText(errorLog.map(e=>`[${e.ts}] ${e.source}: ${e.detail}`).join("\n"));showToast("Copied to clipboard");}} style={{background:"#fff",color:"#000",border:"none",padding:"8px 16px",borderRadius:10,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Copy All</button>
+              <button onClick={()=>setErrorLog([])} style={{background:"transparent",border:"1px solid #444",color:"#888",padding:"8px 16px",borderRadius:10,fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:FONT,letterSpacing:"0.08em",textTransform:"uppercase"}}>Clear</button>
             </div>
-          )}
-        </div>
+            <div style={{maxHeight:300,overflowY:"auto",display:"grid",gap:6}}>
+              {errorLog.map((e,i) => (
+                <div key={i} style={{padding:"10px 12px",background:"#1a1a1a",borderRadius:10,border:"1px solid #222",fontSize:11,fontFamily:"monospace",lineHeight:1.5}}>
+                  <div style={{color:"#8a8a8a",marginBottom:2}}>{new Date(e.ts).toLocaleTimeString("en-GB")} · <span style={{color:"#f87171",fontWeight:600}}>{e.source}</span></div>
+                  <div style={{color:"#ccc",wordBreak:"break-all"}}>{e.detail}</div>
+                </div>
+              ))}
+            </div>
+        </Section>
         )}
+        </div>
 
         {/* ── Company Cards ── */}
         {companies.length > 0 && (
           <div style={{marginBottom:32}}>
-            <div style={{fontSize:14,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:16}}>Companies ({companies.length})</div>
+            <h2 style={{fontSize:TEXT.bodyLg,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:16,color:INK.faint}}>Companies ({companies.length})</h2>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
-              <button onClick={()=>setAdminCompanyFilter(null)} style={{padding:"16px",borderRadius:10,border:adminCompanyFilter===null?"2px solid #fff":"1px solid #333",background:adminCompanyFilter===null?"#000":"transparent",color:adminCompanyFilter===null?"#fff":"#ccc",cursor:"pointer",fontFamily:FONT,textAlign:"left",transition:"all 0.2s"}}>
+              <button onClick={()=>setAdminCompanyFilter(null)} style={{padding:"16px",borderRadius:10,border:adminCompanyFilter===null?"1px solid #fff":`1px solid ${SURFACE.lineStrong}`,background:adminCompanyFilter===null?"#000":"transparent",color:adminCompanyFilter===null?"#fff":"#ccc",cursor:"pointer",fontFamily:FONT,textAlign:"left",transition:"all 0.2s"}}>
                 <div style={{fontSize:11,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase"}}>All Companies</div>
-                <div style={{fontSize:20,fontWeight:600,marginTop:8}}>{allOrders.length}</div>
+                <div style={{fontSize:TEXT.amount,fontWeight:600,marginTop:8,fontVariantNumeric:"tabular-nums"}}>{allOrders.length}</div>
                 <div style={{fontSize:11,color:adminCompanyFilter===null?"rgba(255,255,255,0.6)":"#999",marginTop:2,letterSpacing:"0.06em",textTransform:"uppercase"}}>{formatEUR(allOrders.filter(o=>!o.cancelled).reduce((s,o)=>s+(o.totalWithVat||0),0))} total</div>
               </button>
               {companyStats.map(c => (
-                <button key={c.name} onClick={()=>setAdminCompanyFilter(c.name)} style={{padding:"16px",borderRadius:10,border:adminCompanyFilter===c.name?"2px solid #fff":"1px solid #333",background:adminCompanyFilter===c.name?"#000":"transparent",color:adminCompanyFilter===c.name?"#fff":"#ccc",cursor:"pointer",fontFamily:FONT,textAlign:"left",transition:"all 0.2s"}}>
+                <button key={c.name} onClick={()=>setAdminCompanyFilter(c.name)} style={{padding:"16px",borderRadius:10,border:adminCompanyFilter===c.name?"1px solid #fff":"1px solid #333",background:adminCompanyFilter===c.name?"#000":"transparent",color:adminCompanyFilter===c.name?"#fff":"#ccc",cursor:"pointer",fontFamily:FONT,textAlign:"left",transition:"all 0.2s"}}>
                   <div style={{fontSize:11,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
-                  <div style={{fontSize:20,fontWeight:600,marginTop:8}}>{c.count}</div>
+                  <div style={{fontSize:TEXT.amount,fontWeight:600,marginTop:8,fontVariantNumeric:"tabular-nums"}}>{c.count}</div>
                   <div style={{fontSize:11,color:adminCompanyFilter===c.name?"rgba(255,255,255,0.6)":"#999",marginTop:2,letterSpacing:"0.06em",textTransform:"uppercase"}}>{c.active} active · {formatEUR(c.total)}</div>
                 </button>
               ))}
@@ -419,7 +400,7 @@ export default function AdminView({
               const open = expandedOrder === order.id || editingOrderId === order.id;
               const stage = order.cancelled ? "Cancelled" : (ORDER_STATUSES.find(x => x.key === currentStage(order))?.label || "New");
               return (
-              <div key={order.id} style={{background: order.cancelled ? "#0c0606" : "#000",borderRadius:10,border: order.cancelled ? "1px solid #4a1d1d" : "1px solid #2a2a2a",padding: open ? "24px" : "0"}}>
+              <div key={order.id} style={{background: order.cancelled ? "#120a0a" : SURFACE.card,borderRadius:10,border: order.cancelled ? "1px solid #3a1c1c" : `1px solid ${SURFACE.lineStrong}`,padding: open ? "24px" : "0"}}>
                 {/* Collapsed by default. Fully-expanded cards made this one
                     unbounded page — 2 245px for three orders, and Dorte is
                     going to have fifty. The summary row carries everything
@@ -510,9 +491,9 @@ export default function AdminView({
                         </div>
                       </div>
                     </div>
-                    <div style={{fontSize:10,color: "#8a8a8a",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Items</div>
-                    <div style={{display:"grid",gap:4}}>
-                      {order.lines.map((l,i) => <div key={i} style={{fontSize:11,color: "#888"}}>{l.product} {SIZE_LABELS[l.size]} × {l.qty} @ {formatEUR(l.unitPrice)}</div>)}
+                    <div style={{fontSize:TEXT.eyebrow,color:INK.faint,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Items</div>
+                    <div style={{display:"grid",gap:4,background:SURFACE.inset,borderRadius:RADIUS.control,padding:"12px 16px"}}>
+                      {order.lines.map((l,i) => <div key={i} style={{fontSize:TEXT.body,color:INK.body}}>{l.product} {SIZE_LABELS[l.size]} × {l.qty} @ {formatEUR(l.unitPrice)}</div>)}
                     </div>
                   </div>
                 )}
@@ -543,7 +524,7 @@ export default function AdminView({
               );
             })}
             {filtered.length > visible.length && (
-              <button className="da-btn da-btn-outline" onClick={()=>setOrderLimit(orderLimit + PAGE)} style={{background:"transparent",border:"1px solid #333",color:"#eee",padding:"14px",borderRadius:10,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>
+              <button className="da-btn da-btn-outline" onClick={()=>setOrderLimit(orderLimit + ORDERS_PER_PAGE)} style={{background:"transparent",border:"1px solid #333",color:"#eee",padding:"14px",borderRadius:10,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase",cursor:"pointer",fontFamily:FONT}}>
                 Show {Math.min(PAGE, filtered.length - visible.length)} more — {filtered.length - visible.length} left
               </button>
             )}

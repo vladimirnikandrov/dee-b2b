@@ -23,6 +23,55 @@ The longstanding tech-debt items previously listed here (monolith split, no TS/t
 
 ---
 
+## 2026-08-03 — Layout: a measure, a surface ladder, and a dialog title you can read
+
+Vladimir sent four screenshots: My Orders, the admin panel, an expanded admin order, and a confirm dialog.
+"Illogical and complex, strange" — and on the dialog, "the title isn't visible, in all of them".
+
+### The dialog title was invisible, and that one is mine
+
+Hoisting `ConfirmModal` to the app root (yesterday, to fix a dead Sign Out button) moved it out of the view's
+`base` wrapper — which is where `color: #fff` lives. The `<h2>` had no colour of its own, so it inherited the
+document default: black text on a `#111` panel. Both the dialog shell and its title now set their own colour
+rather than relying on where they happen to be mounted.
+
+### Two things were making these screens read as unfinished
+
+**Everything ran the full width of the window.** On a 1920 screen an order card was 1770px wide with the order
+number in the left sixth and the price stranded at the far right — the two ends of one line, too far apart to
+read as one thing. There is now a single measure per screen: 860px for the buyer's order list (one column of
+cards), 1120px for the admin panel (it carries eleven filter chips and a seven-stage status row).
+
+**The page was `#000` and so was every card on it,** so a card was nothing but a thin outline drawn on the
+void. There is a surface ladder now — page `#000` → card `#0d0d0d` → inset `#141414` → dialog `#161616` — with
+hairlines between rows and the shadow reserved for the floating layer, per `_Instructions-Web/04`.
+
+### My Orders
+
+Rebuilt around what the buyer actually asks: which order, when, how much, where has it got to, what's in it,
+what can I do.
+
+- Identity and money at the two ends of one readable line; the date and item count sit under the order number,
+  "incl. shipping & VAT" under the total.
+- Seven anonymous dots became a progress track with the stage in words — "Shipping invoiced · 1 of 7".
+- The lines moved into an inset well so they read as one block, with quantities and unit prices aligned right
+  in tabular figures instead of trailing the product name as `— 20ml Travel x3`.
+- Actions ordered by weight, with the destructive one pushed to the far end instead of sitting in the row.
+- The empty state is a real empty state (title, one line, one action) rather than a sentence with a link in it.
+
+### The admin panel's five boxes became one list
+
+Promo codes, Inventory, Buyers, Admins, Sync failures were five separate full-width bordered boxes, each
+holding a label and a `+` at the far end — about 640px of chrome before the first order, reading as five empty
+rectangles. They are one card now, rows divided by hairlines, each carrying its own state on the right
+(`1 active`, `Unsaved changes`, a count) and a chevron that turns. The expanded panel opens inside the same
+card. The whole top of the panel went from ~640px to ~250px.
+
+The expanded order card got the same treatment: a hairline under the summary row, and the items in a well
+rather than loose on the surface.
+
+---
+
 ## 2026-08-02 (late) — The logo in emails is text now, not an image
 
 The rename shipped an hour earlier fixed the cache, and then Vladimir's next login code arrived with an empty

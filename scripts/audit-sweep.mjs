@@ -15,7 +15,7 @@ const BASE = process.env.AUDIT_BASE || "http://localhost:3200";
 const DB = process.env.AUDIT_DB || "dee_april_b2b";
 const MODE = process.argv[2] === "mobile" ? "mobile" : "desktop";
 const VIEWPORT = MODE === "mobile" ? { width: 375, height: 812 } : { width: 1440, height: 900 };
-const OUT = `screenshots/phase2/${MODE}`;
+const OUT = `screenshots/phase3/${MODE}`;
 const BUYER = "audit-buyer@project-1804.com";
 const ADMIN = "audit-admin@project-1804.com";
 
